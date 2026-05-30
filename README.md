@@ -2,8 +2,6 @@
 
 > Private, browser-native file compression. No uploads. No tracking. No framework.
 
-**Live:** https://compressly.pages.dev
-
 ---
 
 ## What it compresses
@@ -21,14 +19,13 @@
 
 ## Tech stack
 
-- **Vite 5** — build tool, dev server
-- **TypeScript 5** — strict, no `any` except CDN interop
-- **FFmpeg.wasm 0.12** — compiled C/Rust FFmpeg, multithreaded via SharedArrayBuffer
-- **PDF.js 4.4 + pdf-lib 1.17** — loaded from CDN at runtime
+- **Vite 6** — build tool + dev server
+- **TypeScript 5** — strict typed, no framework
+- **FFmpeg.wasm 0.12** — compiled C FFmpeg, multithreaded via SharedArrayBuffer
+- **PDF.js 4.4 + pdf-lib 1.17** — loaded from jsDelivr CDN at runtime
 - **Canvas API / OffscreenCanvas** — native browser image encoding
 - **WebCodecs API** — GPU video encode (Chrome/Safari tier-2)
 - **MediaRecorder** — universal video fallback
-- **No framework** — pure TypeScript DOM manipulation
 
 ---
 
@@ -36,36 +33,36 @@
 
 ```bash
 npm install
-npm run dev
-```
-
-The dev server runs at http://localhost:5173 and sets the required COOP/COEP headers for SharedArrayBuffer (FFmpeg multithreading).
-
-```bash
-npm run build     # production build → dist/
-npm run preview   # preview build locally
-npm run typecheck # TypeScript type-check (no emit)
+npm run dev        # http://localhost:5173
+npm run build      # production build → dist/
+npm run preview    # preview the build
+npm run typecheck  # TypeScript check
 ```
 
 ---
 
 ## Deploy to Cloudflare Pages
 
-### Option A — GitHub Actions (recommended)
+### Cloudflare Dashboard (easiest)
 
-1. Push this repo to GitHub
-2. Go to Cloudflare Dashboard → Pages → Create project → Connect to Git
-3. Set:
+1. Push repo to GitHub
+2. Cloudflare Dashboard → Workers & Pages → Create → Pages → Connect to Git
+3. Select your repo and set:
+   - **Framework preset:** Vite
    - **Build command:** `npm run build`
    - **Build output directory:** `dist`
-   - **Node version:** `20`
-4. Add secrets to GitHub (Settings → Secrets → Actions):
-   - `CLOUDFLARE_API_TOKEN` — from Cloudflare Dashboard → My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template
-   - `CLOUDFLARE_ACCOUNT_ID` — from Cloudflare Dashboard → right sidebar
+   - **Node version env var:** `NODE_VERSION = 20`
+4. Deploy — done. The `wrangler.json` and `public/_headers` are picked up automatically.
 
-Every push to `main` will auto-deploy via `.github/workflows/deploy.yml`.
+### GitHub Actions (auto-deploy on push)
 
-### Option B — Wrangler CLI
+Add these secrets to your GitHub repo (Settings → Secrets → Actions):
+- `CLOUDFLARE_API_TOKEN` — Cloudflare Dashboard → My Profile → API Tokens → Create Token (use "Edit Cloudflare Workers" template)
+- `CLOUDFLARE_ACCOUNT_ID` — shown in Cloudflare Dashboard right sidebar
+
+Then every push to `main` runs `.github/workflows/deploy.yml` which builds and deploys automatically.
+
+### Wrangler CLI
 
 ```bash
 npm install -g wrangler
@@ -74,23 +71,18 @@ npm run build
 wrangler pages deploy dist --project-name=compressly
 ```
 
-### Option C — Cloudflare Dashboard (drag & drop)
-
-1. `npm run build`
-2. Drag the `dist/` folder into Cloudflare Pages → Upload assets
-
 ---
 
-## Headers (SharedArrayBuffer / FFmpeg MT)
+## How COOP/COEP headers work
 
-`public/_headers` sets these on every Cloudflare Pages response:
+`public/_headers` sets on every response:
 
 ```
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
 
-These are required for `SharedArrayBuffer` which enables FFmpeg multithreading (~2× faster). Without them, FFmpeg falls back to single-threaded mode (still works, just slower).
+These unlock `SharedArrayBuffer`, which FFmpeg.wasm uses for multithreading (~2× faster). Cloudflare Pages serves these headers automatically from `_headers`. Without them FFmpeg falls back to single-threaded mode (still works).
 
 ---
 
@@ -99,22 +91,22 @@ These are required for `SharedArrayBuffer` which enables FFmpeg multithreading (
 ```
 compressly/
 ├── public/
-│   ├── _headers          # COOP/COEP for Cloudflare Pages
-│   ├── _redirects        # SPA fallback (/* → /index.html)
+│   ├── _headers          # COOP/COEP → SharedArrayBuffer for FFmpeg MT
+│   ├── _redirects        # /* → /index.html (SPA fallback)
 │   ├── favicon.svg
 │   ├── robots.txt
 │   └── sitemap.xml
 ├── src/
 │   ├── lib/
-│   │   ├── types.ts          # Shared types + utilities
-│   │   ├── compress.ts       # Dispatcher
-│   │   ├── compressImage.ts  # Canvas 2D / OffscreenCanvas
-│   │   ├── compressPdf.ts    # PDF.js + pdf-lib
-│   │   ├── compressVideo.ts  # FFmpeg → WebCodecs → MediaRecorder
-│   │   ├── compressAudio.ts  # FFmpeg.wasm audio
-│   │   ├── compressGif.ts    # FFmpeg palettegen/paletteuse
+│   │   ├── types.ts          # Shared types + formatBytes/detectFileType
+│   │   ├── compress.ts       # Central dispatcher
+│   │   ├── compressImage.ts  # OffscreenCanvas, binary search
+│   │   ├── compressPdf.ts    # PDF.js + pdf-lib (CDN)
+│   │   ├── compressVideo.ts  # FFmpeg.wasm → WebCodecs → MediaRecorder
+│   │   ├── compressAudio.ts  # FFmpeg.wasm, 6 formats
+│   │   ├── compressGif.ts    # FFmpeg palettegen/paletteuse or WebM
 │   │   ├── optimizeSvg.ts    # Pure TS SVG optimiser
-│   │   └── ffmpeg.ts         # FFmpeg singleton loader
+│   │   └── ffmpeg.ts         # FFmpeg singleton (loads once, cached)
 │   ├── pages/
 │   │   ├── images.ts
 │   │   ├── pdf.ts
@@ -122,14 +114,15 @@ compressly/
 │   │   ├── audio.ts
 │   │   └── gif.ts
 │   ├── components.ts     # DropZone + FileCard DOM builders
-│   ├── router.ts         # Lightweight History API SPA router
-│   ├── toast.ts          # Toast notification helper
-│   ├── style.css         # All styles (CSS custom properties)
-│   └── main.ts           # App entry point — wires router + theme
-├── index.html            # App shell + all page templates
-├── vite.config.ts
+│   ├── router.ts         # History API SPA router (~30 lines)
+│   ├── toast.ts          # Toast notifications
+│   ├── style.css         # All CSS, custom properties
+│   └── main.ts           # Entry — wires router, theme, nav
+├── index.html            # App shell + all <template> page content
+├── wrangler.json         # Cloudflare Pages config (pages_build_output_dir)
+├── vite.config.ts        # Vite 6 config
 ├── tsconfig.json
-└── package.json
+└── package.json          # vite@^6.0.0 + typescript@^5.5.3
 ```
 
 ---
