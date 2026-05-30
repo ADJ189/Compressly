@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Compressly — Private Browser-Native File Compression</title>
+  <meta name="description" content="Compress images, PDFs, video, audio and GIFs privately in your browser. Nothing ever leaves your device." />
+  <meta name="theme-color" content="#3b5bdb" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script type="module" src="/src/main.ts"></script>
+</head>
+<body>
+
+<!-- ── Splash ─────────────────────────────────────────────── -->
+<div id="splash">
+  <div class="splash-logo">
+    <svg width="52" height="52" viewBox="0 0 28 28" fill="none">
+      <rect width="28" height="28" rx="8" fill="#3b5bdb"/>
+      <path d="M8 14L12 10L16 14L20 10" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M8 18L12 14L16 18L20 14" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+    </svg>
+    <span class="splash-name">Compressly</span>
+  </div>
+</div>
+
+<div id="app">
+
+  <!-- ── Nav ──────────────────────────────────────────────── -->
+  <nav class="nav">
+    <div class="nav-logo" data-nav="">
+      <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+        <rect width="28" height="28" rx="8" fill="var(--accent)"/>
+        <path d="M8 14L12 10L16 14L20 10" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M8 18L12 14L16 18L20 14" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+      </svg>
+      <span>Compressly</span>
+    </div>
+    <div class="nav-center">
+      <span class="nav-link" data-nav="">Home</span>
+      <span class="nav-link" data-nav="compress">Compress</span>
+      <span class="nav-link" data-nav="about">About</span>
+      <span class="nav-link" data-nav="docs">Docs</span>
+    </div>
+    <div class="nav-right">
+      <button class="theme-btn" id="theme-btn" aria-label="Toggle theme">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+      <span class="nav-cta" data-nav="compress">Start compressing</span>
+    </div>
+  </nav>
+
+  <!-- ── Main mount ───────────────────────────────────────── -->
+  <main>
+    <div id="main-content"></div>
+  </main>
+
+  <!-- ── Footer ───────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <div class="footer-logo">
+          <svg width="20" height="20" viewBox="0 0 28 28" fill="none">
+            <rect width="28" height="28" rx="8" fill="var(--accent)"/>
+            <path d="M8 14L12 10L16 14L20 10" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M8 18L12 14L16 18L20 14" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+          </svg>
+          <span>Compressly</span>
+        </div>
+        <div class="footer-tagline">Your files never leave your device.</div>
+      </div>
+      <nav class="footer-nav">
+        <a data-nav="">Home</a>
+        <a data-nav="compress">Compress</a>
+        <a data-nav="about">About</a>
+        <a data-nav="docs">Docs</a>
+        <a href="https://github.com/ADJ189/compressly" target="_blank" rel="noopener">GitHub ↗</a>
+      </nav>
+    </div>
+    <div class="footer-bottom">
+      <span>Client-side · Zero uploads · Open Source</span>
+      <span>TypeScript + Vite + FFmpeg.wasm · No framework</span>
+    </div>
+  </footer>
+</div>
+
+<!-- ── Toast container ──────────────────────────────────────── -->
+<div id="toast"></div>
+
+<!-- ════════════════════════════════════════════════════════════
+     PAGE TEMPLATES  (cloned into #main-content by the router)
+     ════════════════════════════════════════════════════════════ -->
+
+<!-- ── HOME ─────────────────────────────────────────────────── -->
+<template id="tpl-home">
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="hero-label"><span class="dot"></span>Client-side · Zero uploads · Free</div>
+      <h1 class="hero-title">Smaller files.<br>No compromises.</h1>
+      <p class="hero-body">
+        Compress images, PDFs, video, audio and GIFs entirely in your browser —
+        hardware-accelerated where available. Zero uploads, zero tracking.
+        Your files stay on your device — always.
+      </p>
+      <div class="hero-actions">
+        <span class="btn-primary" data-nav="compress">
+          Start compressing
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </span>
+        <span class="btn-ghost" data-nav="about">How it works</span>
+      </div>
+      <div class="format-chips">
+        <span class="chip">JPEG</span><span class="chip">PNG</span><span class="chip">WebP</span>
+        <span class="chip">AVIF</span><span class="chip">PDF</span><span class="chip">MP4</span>
+        <span class="chip">WebM</span><span class="chip">MP3</span><span class="chip">GIF</span>
+        <span class="chip">SVG</span><span class="chip">HEIC</span><span class="chip">FLAC</span>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="visual-card">
+        <div class="vc-header">
+          <div class="vc-dots"><span></span><span></span><span></span></div>
+          <span class="vc-title">compressor — 3 files</span>
+        </div>
+        <div class="vc-files">
+          <div class="vc-file">
+            <span class="vc-icon">🖼️</span>
+            <div class="vc-info">
+              <span class="vc-name">photo_holiday.jpg</span>
+              <span class="vc-meta">4.2 MB → 380 KB</span>
+            </div>
+            <span class="vc-badge saved">−91%</span>
+          </div>
+          <div class="vc-file">
+            <span class="vc-icon">📄</span>
+            <div class="vc-info">
+              <span class="vc-name">report_Q4.pdf</span>
+              <span class="vc-meta">18.3 MB → 2.1 MB</span>
+            </div>
+            <span class="vc-badge saved">−88%</span>
+          </div>
+          <div class="vc-file">
+            <span class="vc-icon">🎬</span>
+            <div class="vc-info">
+              <span class="vc-name">demo_reel.mp4</span>
+              <span class="vc-meta">Compressing…</span>
+              <div class="vc-bar"><div class="vc-fill"></div></div>
+            </div>
+            <span class="vc-badge going">64%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="features-title">Everything you need to compress</div>
+    <div class="features-grid">
+      <div class="feat-card" data-nav="compress/images">
+        <div class="fc-icon">🖼️</div>
+        <div class="fc-title">Images</div>
+        <div class="fc-desc">OffscreenCanvas GPU encoding with 14-pass binary search to hit exact target sizes.</div>
+        <div class="fc-tags"><span class="fc-tag">JPEG</span><span class="fc-tag">PNG</span><span class="fc-tag">WebP</span><span class="fc-tag">AVIF</span><span class="fc-tag">HEIC</span></div>
+      </div>
+      <div class="feat-card" data-nav="compress/pdf">
+        <div class="fc-icon">📄</div>
+        <div class="fc-title">PDFs</div>
+        <div class="fc-desc">PDF.js renders pages to canvas, pdf-lib repackages them. Pure JS, no server.</div>
+        <div class="fc-tags"><span class="fc-tag">PDF</span><span class="fc-tag">pdf-lib</span><span class="fc-tag">PDF.js</span></div>
+      </div>
+      <div class="feat-card" data-nav="compress/video">
+        <div class="fc-icon">🎬</div>
+        <div class="fc-title">Video</div>
+        <div class="fc-desc">FFmpeg.wasm → WebCodecs GPU → MediaRecorder. Three-tier fallback for max compatibility.</div>
+        <div class="fc-tags"><span class="fc-tag">H.264</span><span class="fc-tag">H.265</span><span class="fc-tag">VP9</span><span class="fc-tag">AV1</span></div>
+      </div>
+      <div class="feat-card" data-nav="compress/audio">
+        <div class="fc-icon">🎵</div>
+        <div class="fc-title">Audio</div>
+        <div class="fc-desc">FFmpeg.wasm encodes to 6 formats with custom bitrate and sample-rate control.</div>
+        <div class="fc-tags"><span class="fc-tag">MP3</span><span class="fc-tag">AAC</span><span class="fc-tag">Opus</span><span class="fc-tag">FLAC</span></div>
+      </div>
+      <div class="feat-card" data-nav="compress/gif">
+        <div class="fc-icon">🎞️</div>
+        <div class="fc-title">GIFs</div>
+        <div class="fc-desc">Two-pass palettegen + paletteuse (gold standard) or convert to WebM VP9 for 90% savings.</div>
+        <div class="fc-tags"><span class="fc-tag">GIF</span><span class="fc-tag">WebM VP9</span></div>
+      </div>
+      <div class="feat-card" data-nav="compress">
+        <div class="fc-icon">〽️</div>
+        <div class="fc-title">SVG</div>
+        <div class="fc-desc">Pure TypeScript optimiser strips metadata, editor namespaces, and rounds coordinates.</div>
+        <div class="fc-tags"><span class="fc-tag">SVG</span><span class="fc-tag">Zero-dep</span><span class="fc-tag">Inline</span></div>
+      </div>
+    </div>
+  </section>
+</template>
+
+<!-- ── COMPRESS INDEX ─────────────────────────────────────────── -->
+<template id="tpl-compress-index">
+  <div class="compress-wrap">
+    <div class="page-header">
+      <h1 class="page-title">Compress Files</h1>
+      <p class="page-sub">Choose a format to get started. Everything runs locally in your browser.</p>
+    </div>
+    <div class="tool-grid">
+      <div class="tool-card" data-nav="compress/images">
+        <div class="t-icon">🖼️</div>
+        <div class="t-label">Images</div>
+        <div class="t-sub">JPEG · PNG · WebP · AVIF · HEIC</div>
+      </div>
+      <div class="tool-card" data-nav="compress/pdf">
+        <div class="t-icon">📄</div>
+        <div class="t-label">PDF</div>
+        <div class="t-sub">Re-encode pages · pdf-lib</div>
+      </div>
+      <div class="tool-card" data-nav="compress/video">
+        <div class="t-icon">🎬</div>
+        <div class="t-label">Video</div>
+        <div class="t-sub">MP4 · WebM · MOV · AVI</div>
+      </div>
+      <div class="tool-card" data-nav="compress/audio">
+        <div class="t-icon">🎵</div>
+        <div class="t-label">Audio</div>
+        <div class="t-sub">MP3 · AAC · Opus · FLAC · WAV</div>
+      </div>
+      <div class="tool-card" data-nav="compress/gif">
+        <div class="t-icon">🎞️</div>
+        <div class="t-label">GIF</div>
+        <div class="t-sub">Optimise or convert to WebM</div>
+      </div>
+    </div>
+    <div style="margin-top:1rem;padding:1rem 1.25rem;background:var(--accent-soft);border:1px solid rgba(59,91,219,.18);border-radius:var(--radius-lg)">
+      <p style="font-size:.85rem;color:var(--text-3);line-height:1.7">
+        <strong style="color:var(--accent)">Privacy first.</strong>
+        All compression runs locally in your browser. Files are never uploaded to any server.
+        Video, audio, and GIF compression loads <strong>FFmpeg.wasm</strong> (~30 MB) from CDN on first use — cached by your browser after that.
+      </p>
+    </div>
+  </div>
+</template>
+
+<!-- ── ABOUT ──────────────────────────────────────────────────── -->
+<template id="tpl-about">
+  <div class="content-page">
+    <h1>How Compressly Works</h1>
+    <p>Compressly is a 100% client-side compression tool built with TypeScript and Vite. Your files never leave your device. All processing uses WebAssembly, the Canvas API, and modern Web platform APIs.</p>
+
+    <h2>Technology Stack</h2>
+    <div class="tech-grid">
+      <div class="tech-card">
+        <h3>🦀 FFmpeg.wasm</h3>
+        <p>Compiled Rust/C FFmpeg to WebAssembly. Handles video (H.264/H.265/VP9/AV1), audio (MP3/AAC/Opus/OGG/FLAC/WAV), and GIF compression with full codec support. Multithreaded when SharedArrayBuffer is available.</p>
+      </div>
+      <div class="tech-card">
+        <h3>🖼️ Canvas API</h3>
+        <p>OffscreenCanvas + ImageBitmap for hardware-accelerated image decoding and encoding. WebP and AVIF are natively encoded by the browser's own codec (GPU path in Chrome).</p>
+      </div>
+      <div class="tech-card">
+        <h3>📄 PDF.js + pdf-lib</h3>
+        <p>PDF.js 4.4 renders each page to a canvas at configurable DPI. pdf-lib 1.17 repackages the re-compressed images into a new PDF document. Pure JavaScript, no WASM, no server needed.</p>
+      </div>
+      <div class="tech-card">
+        <h3>🎬 WebCodecs</h3>
+        <p>W3C API for hardware-accelerated video encode/decode. Used as the GPU tier-2 fallback when FFmpeg.wasm is unavailable. Supported in Chrome 94+ and Safari 16.4+.</p>
+      </div>
+      <div class="tech-card">
+        <h3>⚡ Vite + TypeScript</h3>
+        <p>The project is a standard Vite app with strict TypeScript. No framework — pure DOM manipulation with typed components. Deploys to Cloudflare Pages in seconds.</p>
+      </div>
+      <div class="tech-card">
+        <h3>〽️ SVG Engine</h3>
+        <p>Zero-dependency TypeScript SVG optimiser. Strips XML declarations, comments, metadata, Inkscape/Sodipodi namespaces, empty groups, compacts path data, and rounds coordinates.</p>
+      </div>
+    </div>
+
+    <h2>Privacy Guarantee</h2>
+    <p>Compressly has no backend. No files are uploaded anywhere. All processing happens on your device using local compute. You can verify this by watching your Network tab — no file data ever leaves the browser.</p>
+
+    <h2>Image Compression</h2>
+    <p>Images are decoded via <code>createImageBitmap()</code> then re-encoded to JPEG/WebP/AVIF/PNG via <code>OffscreenCanvas.convertToBlob()</code>. A 14-iteration binary search hits exact target sizes. AVIF automatically falls back to WebP on Firefox.</p>
+
+    <h2>PDF Compression</h2>
+    <p>Each PDF page is rendered at a configurable scale using PDF.js, then re-embedded as a compressed JPEG via pdf-lib. Three presets (Low/Recommended/Extreme) control quality and render scale. A target-size mode binary-searches per-page JPEG quality across 12 iterations.</p>
+
+    <h2>Video Compression</h2>
+    <p>Three-tier fallback: (1) FFmpeg.wasm with multithreading when <code>SharedArrayBuffer</code> is available (requires COOP/COEP headers — set automatically on Cloudflare Pages via <code>_headers</code>), (2) WebCodecs API for GPU-accelerated H.264 on Chrome/Safari, (3) MediaRecorder canvas capture as universal fallback.</p>
+
+    <h2>Audio Compression</h2>
+    <p>FFmpeg.wasm handles all audio formats: MP3 (libmp3lame), AAC, Vorbis OGG, Opus (VBR mode 10 — best quality-per-bit codec), FLAC level 8, and WAV PCM. Custom bitrate and sample rate controls. Can also extract audio from video containers.</p>
+
+    <h2>GIF Optimisation</h2>
+    <p>Two-pass palettegen (up to 256 colours with <code>stats_mode=diff</code>) + paletteuse with Bayer dithering and <code>diff_mode=rectangle</code> — the gold-standard GIF compression pipeline used by professional tools. Alternatively converts to WebM VP9 for 70–95% size reduction.</p>
+  </div>
+</template>
+
+<!-- ── DOCS ───────────────────────────────────────────────────── -->
+<template id="tpl-docs">
+  <div class="content-page">
+    <h1>Documentation</h1>
+    <p>Technical reference for Compressly's compression options and browser compatibility.</p>
+
+    <h2>Image Options</h2>
+    <ul>
+      <li><code>format</code> — Output format: <code>image/webp</code> (default), <code>image/jpeg</code>, <code>image/png</code>, <code>image/avif</code></li>
+      <li><code>quality</code> — 0.01–0.99. Ignored for PNG (always lossless). Default: WebP 0.82, JPEG 0.85, AVIF 0.70.</li>
+      <li><code>maxWidth / maxHeight</code> — Downscale if either dimension exceeds the limit (aspect ratio preserved, lanczos).</li>
+      <li><code>targetSizeKB</code> — Binary-search quality over 14 iterations to hit this file size. Ignores <code>quality</code>.</li>
+    </ul>
+
+    <h2>PDF Options</h2>
+    <ul>
+      <li><code>pdfCompressionLevel</code>
+        <ul>
+          <li><code>low</code> — quality 0.85, scale 2.0 (high DPI, minimal loss)</li>
+          <li><code>recommended</code> — quality 0.60, scale 1.5 (best balance)</li>
+          <li><code>extreme</code> — quality 0.30, scale 1.0 (maximum compression)</li>
+        </ul>
+      </li>
+      <li><code>pdfRenderScale</code> — DPI multiplier (1.0–3.0). Higher = better quality and larger output.</li>
+      <li><code>pdfImageFormat</code> — <code>image/jpeg</code> (default, smaller) or <code>image/png</code> (lossless pages).</li>
+      <li><code>targetSizeKB</code> — Binary-searches per-page JPEG quality to approximate target total size.</li>
+    </ul>
+
+    <h2>Video Options</h2>
+    <ul>
+      <li><code>videoCodec</code> — <code>h264</code> (default), <code>h265</code>, <code>vp9</code>, <code>vp8</code>, <code>av1</code></li>
+      <li><code>quality</code> — 0–1 maps to CRF 18–35 for H.264/H.265; VP9/AV1 use equivalent CRF with <code>-b:v 0</code>.</li>
+      <li><code>videoBitrate</code> — Target bitrate in bps (used in bitrate mode).</li>
+      <li><code>targetSizeKB</code> — Calculates bitrate as <code>(size × 8) / duration</code> and applies it as max bitrate.</li>
+      <li><code>fps</code> — Output framerate. 0 = preserve source FPS.</li>
+      <li><code>maxWidth</code> — Scale down keeping aspect ratio (lanczos). Height auto-calculated.</li>
+      <li><code>videoPreset</code> — <code>ultrafast</code> / <code>fast</code> (default) / <code>medium</code> / <code>slow</code></li>
+    </ul>
+
+    <h2>Audio Options</h2>
+    <ul>
+      <li><code>audioFormat</code> — <code>mp3</code>, <code>aac</code>, <code>ogg</code>, <code>opus</code>, <code>flac</code>, <code>wav</code></li>
+      <li><code>audioBitrate</code> — kbps. Defaults: mp3→192, aac→160, ogg→128, opus→96. Ignored for FLAC/WAV.</li>
+      <li><code>audioSampleRate</code> — e.g. 44100, 48000. 0 = preserve source rate.</li>
+      <li><code>stripMetadata</code> — Removes ID3/tags/cover art from output (<code>-map_metadata -1</code>).</li>
+    </ul>
+
+    <h2>GIF Options</h2>
+    <ul>
+      <li><code>gifToVideo</code> — Convert to WebM VP9 instead of re-optimising as GIF. Dramatic size savings.</li>
+      <li><code>quality</code> — 0–1 controls palette size (16–256 colours). Default 0.82 = 213 colours.</li>
+      <li><code>maxWidth</code> — Lanczos resize applied before palette generation.</li>
+      <li><code>fps</code> — Target framerate (decimation via FFmpeg <code>fps</code> filter).</li>
+    </ul>
+
+    <h2>Deployment</h2>
+    <p>The project deploys to Cloudflare Pages automatically via GitHub Actions. The <code>public/_headers</code> file sets the required COOP/COEP headers for SharedArrayBuffer (FFmpeg multithreading).</p>
+    <ul>
+      <li>Build command: <code>npm run build</code></li>
+      <li>Output directory: <code>dist</code></li>
+      <li>Node version: 20+</li>
+    </ul>
+
+    <h2>Browser Compatibility</h2>
+    <ul>
+      <li><strong>Images:</strong> All modern browsers. AVIF encoding: Chrome 85+, Firefox 93+, Safari 16.1+.</li>
+      <li><strong>PDF:</strong> All modern browsers (PDF.js Canvas 2D + pdf-lib pure JS).</li>
+      <li><strong>Video/Audio/GIF (FFmpeg.wasm):</strong> Chrome 91+, Firefox 91+, Edge 91+. Safari 15.2+ (single-threaded).</li>
+      <li><strong>Video (WebCodecs GPU tier):</strong> Chrome 94+, Safari 16.4+.</li>
+      <li><strong>Multithreaded FFmpeg:</strong> Requires COOP + COEP headers (set by <code>_headers</code> on Cloudflare Pages).</li>
+    </ul>
+  </div>
+</template>
+
+</body>
+</html>
