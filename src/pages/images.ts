@@ -1,4 +1,4 @@
-import { uid, detectFileType, getOutputExtension } from '../lib/types';
+import { uid, getOutputExtension } from '../lib/types';
 import type { FileEntry, CompressOptions, ImageFormat } from '../lib/types';
 import { compressImage, getBestFormat } from '../lib/compressImage';
 import { createDropZone, renderFileCard, patchFileCard, renderBatchBar } from '../components';

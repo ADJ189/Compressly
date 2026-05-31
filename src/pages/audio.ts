@@ -1,4 +1,4 @@
-import { uid, getOutputExtension } from '../lib/types';
+import { uid } from '../lib/types';
 import type { FileEntry, CompressOptions, AudioFormat } from '../lib/types';
 import { compressAudio } from '../lib/compressAudio';
 import { createDropZone, renderFileCard, patchFileCard, renderBatchBar } from '../components';

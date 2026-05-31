@@ -1,4 +1,4 @@
-import { uid, getOutputExtension } from '../lib/types';
+import { uid } from '../lib/types';
 import type { FileEntry, CompressOptions, PdfLevel } from '../lib/types';
 import { compressPdf } from '../lib/compressPdf';
 import { createDropZone, renderFileCard, patchFileCard, renderBatchBar } from '../components';
@@ -68,7 +68,7 @@ export function mountPdf(root: HTMLElement) {
           <span class="badge pdf">📄 PDF</span>
           <h1 class="page-title">PDF Compressor</h1>
         </div>
-        <p class="page-desc">PDF.js renders each page → re-embedded as JPEG via pdf-lib. Reduces file size dramatically while keeping text readable.</p>
+        <p class="page-desc">Structural mode resamples embedded images in-place — text and vectors stay sharp. Canvas fallback for extreme compression or encrypted PDFs.</p>
       </div>
       <div class="settings-card">
         <div class="row">
