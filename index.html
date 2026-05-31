@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Compressly — Private Browser-Native File Compression</title>
+  <title>CompressZ — Private Browser-Native File Compression</title>
   <meta name="description" content="Compress images, PDFs, video, audio and GIFs privately in your browser. Nothing ever leaves your device." />
   <meta name="theme-color" content="#3b5bdb" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -23,7 +23,7 @@
       <path d="M8 14L12 10L16 14L20 10" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
       <path d="M8 18L12 14L16 18L20 14" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
     </svg>
-    <span class="splash-name">Compressly</span>
+    <span class="splash-name">CompressZ</span>
   </div>
 </div>
 
@@ -37,7 +37,7 @@
         <path d="M8 14L12 10L16 14L20 10" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
         <path d="M8 18L12 14L16 18L20 14" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
       </svg>
-      <span>Compressly</span>
+      <span>CompressZ</span>
     </div>
     <div class="nav-center">
       <span class="nav-link" data-nav="">Home</span>
@@ -70,7 +70,7 @@
             <path d="M8 14L12 10L16 14L20 10" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M8 18L12 14L16 18L20 14" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
           </svg>
-          <span>Compressly</span>
+          <span>CompressZ</span>
         </div>
         <div class="footer-tagline">Your files never leave your device.</div>
       </div>
@@ -79,7 +79,7 @@
         <a data-nav="compress">Compress</a>
         <a data-nav="about">About</a>
         <a data-nav="docs">Docs</a>
-        <a href="https://github.com/ADJ189/compressly" target="_blank" rel="noopener">GitHub ↗</a>
+        <a href="https://github.com/ADJ189/compressz" target="_blank" rel="noopener">GitHub ↗</a>
       </nav>
     </div>
     <div class="footer-bottom">
@@ -118,7 +118,7 @@
         <span class="chip">JPEG</span><span class="chip">PNG</span><span class="chip">WebP</span>
         <span class="chip">AVIF</span><span class="chip">PDF</span><span class="chip">MP4</span>
         <span class="chip">WebM</span><span class="chip">MP3</span><span class="chip">GIF</span>
-        <span class="chip">SVG</span><span class="chip">HEIC</span><span class="chip">FLAC</span>
+        <span class="chip">SVG</span><span class="chip">HEIC</span><span class="chip">FLAC</span><span class="chip">OCR</span>
       </div>
     </div>
     <div class="hero-visual">
@@ -191,6 +191,12 @@
         <div class="fc-desc">Two-pass palettegen + paletteuse (gold standard) or convert to WebM VP9 for 90% savings.</div>
         <div class="fc-tags"><span class="fc-tag">GIF</span><span class="fc-tag">WebM VP9</span></div>
       </div>
+      <div class="feat-card" data-nav="compress/ocr">
+        <div class="fc-icon">🔍</div>
+        <div class="fc-title">PDF OCR</div>
+        <div class="fc-desc">Dual-engine OCR: Tesseract.js for clean docs, PaddleOCR neural nets for tables, Asian scripts, and complex layouts.</div>
+        <div class="fc-tags"><span class="fc-tag">Tesseract</span><span class="fc-tag">PaddleOCR</span><span class="fc-tag">Searchable PDF</span></div>
+      </div>
       <div class="feat-card" data-nav="compress">
         <div class="fc-icon">〽️</div>
         <div class="fc-title">SVG</div>
@@ -234,12 +240,17 @@
         <div class="t-label">GIF</div>
         <div class="t-sub">Optimise or convert to WebM</div>
       </div>
+      <div class="tool-card" data-nav="compress/ocr">
+        <div class="t-icon">🔍</div>
+        <div class="t-label">PDF OCR</div>
+        <div class="t-sub">Tesseract · PaddleOCR · Searchable</div>
+      </div>
     </div>
     <div style="margin-top:1rem;padding:1rem 1.25rem;background:var(--accent-soft);border:1px solid rgba(59,91,219,.18);border-radius:var(--radius-lg)">
       <p style="font-size:.85rem;color:var(--text-3);line-height:1.7">
         <strong style="color:var(--accent)">Privacy first.</strong>
         All compression runs locally in your browser. Files are never uploaded to any server.
-        Video, audio, and GIF compression loads <strong>FFmpeg.wasm</strong> (~30 MB) from CDN on first use — cached by your browser after that.
+        Video, audio, and GIF compression loads <strong>FFmpeg.wasm</strong> (~30 MB). OCR loads <strong>Tesseract.js</strong> or <strong>PaddleOCR</strong> models on first use (~30 MB) from CDN on first use — cached by your browser after that.
       </p>
     </div>
   </div>
@@ -248,8 +259,8 @@
 <!-- ── ABOUT ──────────────────────────────────────────────────── -->
 <template id="tpl-about">
   <div class="content-page">
-    <h1>How Compressly Works</h1>
-    <p>Compressly is a 100% client-side compression tool built with TypeScript and Vite. Your files never leave your device. All processing uses WebAssembly, the Canvas API, and modern Web platform APIs.</p>
+    <h1>How CompressZ Works</h1>
+    <p>CompressZ is a 100% client-side compression tool built with TypeScript and Vite. Your files never leave your device. All processing uses WebAssembly, the Canvas API, and modern Web platform APIs.</p>
 
     <h2>Technology Stack</h2>
     <div class="tech-grid">
@@ -277,10 +288,18 @@
         <h3>〽️ SVG Engine</h3>
         <p>Zero-dependency TypeScript SVG optimiser. Strips XML declarations, comments, metadata, Inkscape/Sodipodi namespaces, empty groups, compacts path data, and rounds coordinates.</p>
       </div>
+      <div class="tech-card">
+        <h3>🔤 Tesseract.js 5</h3>
+        <p>LSTM neural OCR model compiled to SIMD-accelerated WASM (~10 MB). Supports 100+ languages. Runs fully offline after first load. Used for clean scans and Latin/Cyrillic/Arabic scripts.</p>
+      </div>
+      <div class="tech-card">
+        <h3>🧠 PaddleOCR PP-OCRv3</h3>
+        <p>Baidu's state-of-the-art OCR pipeline: text detector + direction classifier + recogniser via WebGL (~25 MB). Best for tables, multi-column layouts, rotated text, CJK, and complex scans.</p>
+      </div>
     </div>
 
     <h2>Privacy Guarantee</h2>
-    <p>Compressly has no backend. No files are uploaded anywhere. All processing happens on your device using local compute. You can verify this by watching your Network tab — no file data ever leaves the browser.</p>
+    <p>CompressZ has no backend. No files are uploaded anywhere. All processing happens on your device using local compute. You can verify this by watching your Network tab — no file data ever leaves the browser.</p>
 
     <h2>Image Compression</h2>
     <p>Images are decoded via <code>createImageBitmap()</code> then re-encoded to JPEG/WebP/AVIF/PNG via <code>OffscreenCanvas.convertToBlob()</code>. A 14-iteration binary search hits exact target sizes. AVIF automatically falls back to WebP on Firefox.</p>
@@ -296,6 +315,12 @@
 
     <h2>GIF Optimisation</h2>
     <p>Two-pass palettegen (up to 256 colours with <code>stats_mode=diff</code>) + paletteuse with Bayer dithering and <code>diff_mode=rectangle</code> — the gold-standard GIF compression pipeline used by professional tools. Alternatively converts to WebM VP9 for 70–95% size reduction.</p>
+
+    <h2>PDF OCR</h2>
+    <p>CompressZ runs OCR entirely in the browser with two engines. <strong>Auto mode</strong> analyses the first page render — measuring dark-pixel density as a proxy for layout complexity — and selects the best engine automatically.</p>
+    <p><strong>Tesseract.js 5</strong> uses the LSTM neural model with SIMD-accelerated WebAssembly. It loads ~10 MB from CDN on first use and runs completely offline thereafter. Optimal for single-column clean scans, typeset documents, and 100+ language scripts including Latin, Cyrillic, and Arabic.</p>
+    <p><strong>PaddleOCR PP-OCRv3</strong> is Baidu's three-stage pipeline (PP-OCRv3 text detector → MobileNetV3 direction classifier → CRNN recogniser) running via WebGL/paddle.js (~25 MB). It handles multi-column layouts, tables, rotated/skewed text, handwriting, and Chinese/Japanese/Korean characters with state-of-the-art accuracy.</p>
+    <p>Output is a searchable PDF with an invisible text layer overlaid on the original pages (or a fresh image-based PDF). Optionally exports a plain <code>.txt</code> file with the full extracted text.</p>
   </div>
 </template>
 
@@ -303,7 +328,7 @@
 <template id="tpl-docs">
   <div class="content-page">
     <h1>Documentation</h1>
-    <p>Technical reference for Compressly's compression options and browser compatibility.</p>
+    <p>Technical reference for CompressZ's compression options and browser compatibility.</p>
 
     <h2>Image Options</h2>
     <ul>
@@ -361,6 +386,16 @@
       <li>Output directory: <code>dist</code></li>
       <li>Node version: 20+</li>
     </ul>
+
+    <h2>PDF OCR Options</h2>
+    <ul>
+      <li><code>engine</code> — <code>auto</code> (default), <code>tesseract</code>, <code>paddle</code></li>
+      <li><code>language</code> — <code>auto</code>, <code>eng</code>, <code>fra</code>, <code>deu</code>, <code>spa</code>, <code>ita</code>, <code>por</code>, <code>rus</code>, <code>chi_sim</code>, <code>chi_tra</code>, <code>jpn</code>, <code>kor</code>, <code>ara</code>, <code>hin</code></li>
+      <li><code>renderDpi</code> — 150–400 DPI. Higher = better accuracy, slower. Default 250. Recommended 300 for small print.</li>
+      <li><code>overlayMode</code> — <code>true</code> (embed text layer on original PDF), <code>false</code> (new image-based PDF).</li>
+      <li><code>extractText</code> — Also download extracted text as a <code>.txt</code> file.</li>
+    </ul>
+    <p><strong>Engine selection guidance:</strong> Use Tesseract for clean, single-column scanned documents in Latin-based languages. Use PaddleOCR for multi-column layouts, tables, forms, CJK scripts (Chinese/Japanese/Korean), Arabic, Hindi, or any document with complex structure. Auto mode covers most cases correctly.</p>
 
     <h2>Browser Compatibility</h2>
     <ul>
