@@ -1,5 +1,5 @@
 import './style.css';
-import { navigate, on, init } from './router';
+import { on, init } from './router';
 import { mountImages } from './pages/images';
 import { mountPdf }    from './pages/pdf';
 import { mountVideo }  from './pages/video';
