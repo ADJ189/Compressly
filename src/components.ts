@@ -1,5 +1,5 @@
 import { formatBytes } from './lib/types';
-import type { FileEntry, CompressResult } from './lib/types';
+import type { FileEntry } from './lib/types';
 
 // ── DropZone ──────────────────────────────────────────────────
 export function createDropZone(opts: {
