@@ -26,7 +26,6 @@ export interface CompressOptions {
   // PDF
   pdfCompressionLevel?: PdfLevel;
   pdfRenderScale?: number;
-  pdfImageFormat?: 'image/jpeg' | 'image/png';
   // GIF
   gifToVideo?: boolean;
 }
