@@ -71,8 +71,8 @@ export function mountVideo(root: HTMLElement) {
   let batchEl!: HTMLElement; let listEl!: HTMLElement; let dzWrap!: ReturnType<typeof createDropZone>;
 
   root.innerHTML = `
-    <div class="compress-wrap">
-      <span class="back-link" data-nav="compress">← All formats</span>
+    <div class="tool-wrap">
+      <span class="back-link" data-nav="">← Home</span>
       <div class="page-header">
         <div class="header-top">
           <span class="badge video">🎬 Video</span>
@@ -103,20 +103,20 @@ export function mountVideo(root: HTMLElement) {
     const card = root.querySelector('#video-settings')!;
     const crf  = Math.round(18 + (1 - crfQuality / 100) * 17);
     card.innerHTML = `
-      <div class="row">
-        <div class="field">
-          <span class="label">Mode</span>
+      <div class="s-row">
+        <div class="s-field">
+          <span class="s-label">Mode</span>
           <div class="seg">
             <button class="${mode==='crf'?'on':''}" id="m-crf">Quality (CRF)</button>
             <button class="${mode==='bitrate'?'on':''}" id="m-br">Bitrate</button>
             <button class="${mode==='targetSize'?'on':''}" id="m-ts">Target size</button>
           </div>
         </div>
-        ${mode==='crf'?`<div class="field"><span class="label">Quality <strong id="crf-lbl">${crfQuality}%</strong> <em>CRF ${crf}</em></span><input type="range" class="slider" min="1" max="99" value="${crfQuality}" id="crf-range"></div>`:''}
-        ${mode==='bitrate'?`<div class="field"><span class="label">Bitrate (kbps)</span><input class="ti" type="number" value="${bitrate}" id="br-input"></div>`:''}
-        ${mode==='targetSize'?`<div class="field"><span class="label">Target size (MB)</span><input class="ti" type="number" value="${targetSizeMB||''}" step="0.1" id="ts-input"></div>`:''}
-        <div class="field">
-          <span class="label">Codec</span>
+        ${mode==='crf'?`<div class="s-field"><span class="s-label">Quality <strong id="crf-lbl">${crfQuality}%</strong> <em>CRF ${crf}</em></span><input type="range" class="slider" min="1" max="99" value="${crfQuality}" id="crf-range"></div>`:''}
+        ${mode==='bitrate'?`<div class="s-field"><span class="s-label">Bitrate (kbps)</span><input class="ti" type="number" value="${bitrate}" id="br-input"></div>`:''}
+        ${mode==='targetSize'?`<div class="s-field"><span class="s-label">Target size (MB)</span><input class="ti" type="number" value="${targetSizeMB||''}" step="0.1" id="ts-input"></div>`:''}
+        <div class="s-field">
+          <span class="s-label">Codec</span>
           <select class="si" id="codec-sel">
             <option value="h264" ${codec==='h264'?'selected':''}>H.264 (MP4)</option>
             <option value="h265" ${codec==='h265'?'selected':''}>H.265 (HEVC)</option>
@@ -125,21 +125,21 @@ export function mountVideo(root: HTMLElement) {
             <option value="av1"  ${codec==='av1'?'selected':''}>AV1</option>
           </select>
         </div>
-        <div class="field">
-          <span class="label">Preset</span>
+        <div class="s-field">
+          <span class="s-label">Preset</span>
           <select class="si" id="preset-sel">
             ${['ultrafast','fast','medium','slow'].map(p=>`<option value="${p}" ${preset===p?'selected':''}>${p}</option>`).join('')}
           </select>
         </div>
-        <div class="field">
-          <span class="label">Max width</span>
+        <div class="s-field">
+          <span class="s-label">Max width</span>
           <select class="si" id="maxw-sel">
             <option value="0" ${maxWidth===0?'selected':''}>Original</option>
             ${[3840,1920,1280,854,640].map(w=>`<option value="${w}" ${maxWidth===w?'selected':''}>${w}px</option>`).join('')}
           </select>
         </div>
-        <div class="field">
-          <span class="label">FPS</span>
+        <div class="s-field">
+          <span class="s-label">FPS</span>
           <select class="si" id="fps-sel">
             <option value="0" ${fps===0?'selected':''}>Original</option>
             ${[60,30,25,24,15].map(f=>`<option value="${f}" ${fps===f?'selected':''}>${f}</option>`).join('')}

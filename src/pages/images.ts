@@ -74,8 +74,8 @@ export function mountImages(root: HTMLElement) {
   let warnEl!:  HTMLElement;
 
   root.innerHTML = `
-    <div class="compress-wrap">
-      <span class="back-link" data-nav="compress">← All formats</span>
+    <div class="tool-wrap">
+      <span class="back-link" data-nav="">← Home</span>
       <div class="page-header">
         <div class="header-top">
           <span class="badge img">🖼️ Images</span>
@@ -109,8 +109,8 @@ export function mountImages(root: HTMLElement) {
     const card = root.querySelector('#settings-card')!;
 
     const modeHtml = `
-      <div class="field">
-        <span class="label">Mode</span>
+      <div class="s-field">
+        <span class="s-label">Mode</span>
         <div class="seg">
           <button class="${mode==='quality'?'on':''}" id="mode-q">Quality</button>
           <button class="${mode==='targetSize'?'on':''}" id="mode-t">Target size</button>
@@ -118,18 +118,18 @@ export function mountImages(root: HTMLElement) {
       </div>`;
 
     const qHtml = mode === 'quality' ? `
-      <div class="field">
-        <span class="label">Quality <strong id="ql">${quality}%</strong></span>
+      <div class="s-field">
+        <span class="s-label">Quality <strong id="ql">${quality}%</strong></span>
         <input type="range" class="slider" min="10" max="99" value="${quality}" id="q-range">
       </div>` : `
-      <div class="field">
-        <span class="label">Target (KB)</span>
+      <div class="s-field">
+        <span class="s-label">Target (KB)</span>
         <input class="ti" type="number" value="${targetSizeKB}" min="1" id="q-target">
       </div>`;
 
     const fmtHtml = `
-      <div class="field">
-        <span class="label">Output format</span>
+      <div class="s-field">
+        <span class="s-label">Output format</span>
         <select class="si" id="fmt-sel">
           <option value="image/webp"  ${format==='image/webp'?'selected':''}>WebP</option>
           <option value="image/jpeg"  ${format==='image/jpeg'?'selected':''}>JPEG</option>
@@ -139,8 +139,8 @@ export function mountImages(root: HTMLElement) {
       </div>`;
 
     const dimHtml = `
-      <div class="field">
-        <span class="label">Max size</span>
+      <div class="s-field">
+        <span class="s-label">Max size</span>
         <select class="si" id="dim-sel">
           <option value="0"    ${maxDim===0?'selected':''}>Original</option>
           <option value="4096" ${maxDim===4096?'selected':''}>4096 px</option>
@@ -151,7 +151,7 @@ export function mountImages(root: HTMLElement) {
         </select>
       </div>`;
 
-    card.innerHTML = `<div class="row">${modeHtml}${qHtml}${fmtHtml}${dimHtml}</div>`;
+    card.innerHTML = `<div class="s-row">${modeHtml}${qHtml}${fmtHtml}${dimHtml}</div>`;
 
     card.querySelector('#mode-q')!.addEventListener('click', () => { mode='quality'; renderSettings(); });
     card.querySelector('#mode-t')!.addEventListener('click', () => { mode='targetSize'; renderSettings(); });

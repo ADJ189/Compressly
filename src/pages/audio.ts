@@ -76,8 +76,8 @@ export function mountAudio(root: HTMLElement) {
   let batchEl!: HTMLElement; let listEl!: HTMLElement; let dzWrap!: ReturnType<typeof createDropZone>;
 
   root.innerHTML = `
-    <div class="compress-wrap">
-      <span class="back-link" data-nav="compress">← All formats</span>
+    <div class="tool-wrap">
+      <span class="back-link" data-nav="">← Home</span>
       <div class="page-header">
         <div class="header-top">
           <span class="badge audio">🎵 Audio</span>
@@ -104,29 +104,29 @@ export function mountAudio(root: HTMLElement) {
     const ll     = isLossless(fmt);
 
     card.innerHTML = `
-      <div class="row">
-        <div class="field">
-          <span class="label">Output format</span>
+      <div class="s-row">
+        <div class="s-field">
+          <span class="s-label">Output format</span>
           <div class="fmt-pills" id="fmt-pills">
             ${formats.map(f=>`<button class="pill${fmt===f?' on':''}" data-fmt="${f}">${f.toUpperCase()}</button>`).join('')}
           </div>
         </div>
         ${!ll && bOpts.length ? `
-          <div class="field">
-            <span class="label">Bitrate</span>
+          <div class="s-field">
+            <span class="s-label">Bitrate</span>
             <select class="si" id="br-sel">
               ${bOpts.map(b=>`<option value="${b}" ${bitrate===b?'selected':''}>${b} kbps</option>`).join('')}
             </select>
-          </div>` : ll ? `<div class="field"><span class="label" style="color:var(--green)">✓ Lossless — no bitrate setting</span></div>` : ''}
-        <div class="field">
-          <span class="label">Sample rate</span>
+          </div>` : ll ? `<div class="s-field"><span class="s-label" style="color:var(--green)">✓ Lossless — no bitrate setting</span></div>` : ''}
+        <div class="s-field">
+          <span class="s-label">Sample rate</span>
           <select class="si" id="sr-sel">
             <option value="0" ${sampleRate===0?'selected':''}>Source rate</option>
             ${[48000,44100,32000,22050].map(r=>`<option value="${r}" ${sampleRate===r?'selected':''}>${r/1000} kHz</option>`).join('')}
           </select>
         </div>
-        <div class="field">
-          <span class="label">Metadata</span>
+        <div class="s-field">
+          <span class="s-label">Metadata</span>
           <div class="seg">
             <button class="${stripMeta?'on':''}" id="strip-on">Strip tags</button>
             <button class="${!stripMeta?'on':''}" id="strip-off">Keep tags</button>

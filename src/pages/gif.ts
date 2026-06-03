@@ -60,8 +60,8 @@ export function mountGif(root: HTMLElement) {
   let batchEl!: HTMLElement; let listEl!: HTMLElement; let dzWrap!: ReturnType<typeof createDropZone>;
 
   root.innerHTML = `
-    <div class="compress-wrap">
-      <span class="back-link" data-nav="compress">← All formats</span>
+    <div class="tool-wrap">
+      <span class="back-link" data-nav="">← Home</span>
       <div class="page-header">
         <div class="header-top">
           <span class="badge gif">🎞️ GIF</span>
@@ -85,21 +85,21 @@ export function mountGif(root: HTMLElement) {
     const card = root.querySelector('#gif-settings')!;
     const colors = Math.round(16 + (quality / 100) * 240);
     card.innerHTML = `
-      <div class="row">
-        <div class="field">
-          <span class="label">Output</span>
+      <div class="s-row">
+        <div class="s-field">
+          <span class="s-label">Output</span>
           <div class="seg">
             <button class="${!gifToVideo?'on':''}" id="out-gif">Optimised GIF</button>
             <button class="${gifToVideo?'on':''}" id="out-webm">Convert to WebM</button>
           </div>
         </div>
         ${!gifToVideo ? `
-        <div class="field">
-          <span class="label">Quality <strong id="ql">${quality}%</strong> <em>${colors} colours</em></span>
+        <div class="s-field">
+          <span class="s-label">Quality <strong id="ql">${quality}%</strong> <em>${colors} colours</em></span>
           <input type="range" class="slider" min="10" max="99" value="${quality}" id="q-range">
         </div>
-        <div class="field">
-          <span class="label">Max width</span>
+        <div class="s-field">
+          <span class="s-label">Max width</span>
           <select class="si" id="mw-sel">
             <option value="0"   ${maxWidth===0?'selected':''}>Original</option>
             <option value="800" ${maxWidth===800?'selected':''}>800 px</option>
@@ -108,15 +108,15 @@ export function mountGif(root: HTMLElement) {
             <option value="320" ${maxWidth===320?'selected':''}>320 px</option>
           </select>
         </div>
-        <div class="field">
-          <span class="label">FPS limit</span>
+        <div class="s-field">
+          <span class="s-label">FPS limit</span>
           <select class="si" id="fps-sel">
             <option value="0"  ${fps===0?'selected':''}>Original</option>
             <option value="24" ${fps===24?'selected':''}>24 fps</option>
             <option value="15" ${fps===15?'selected':''}>15 fps</option>
             <option value="10" ${fps===10?'selected':''}>10 fps</option>
           </select>
-        </div>` : `<div class="field"><p style="font-size:.82rem;color:var(--text-3);line-height:1.6">Converts to WebM VP9 for 70–95% size reduction. <br>Great for websites that accept video.</p></div>`}
+        </div>` : `<div class="s-field"><p style="font-size:.82rem;color:var(--text-3);line-height:1.6">Converts to WebM VP9 for 70–95% size reduction. <br>Great for websites that accept video.</p></div>`}
       </div>`;
 
     card.querySelector('#out-gif')?.addEventListener('click',   () => { gifToVideo=false; renderSettings(); });

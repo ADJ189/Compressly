@@ -471,8 +471,8 @@ export function mountOcr(root: HTMLElement) {
   let dzWrap!:  ReturnType<typeof createDropZone>;
 
   root.innerHTML = `
-    <div class="compress-wrap">
-      <span class="back-link" data-nav="compress">← All tools</span>
+    <div class="tool-wrap">
+      <span class="back-link" data-nav="">← Home</span>
       <div class="page-header">
         <div class="header-top">
           <span class="badge ocr">🔍 OCR</span>
