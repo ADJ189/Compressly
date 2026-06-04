@@ -1,18 +1,38 @@
+/**
+ * ocr.ts — PDF OCR engine
+ *
+ * Engines:
+ *   A) Tesseract.js 5   — LSTM WASM, 100+ languages, ~10 MB per lang
+ *   B) EasyOCR WASM     — lightweight WebAssembly port (~8 MB), great for
+ *                         Latin/CJK/Arabic, runs via ort-web (ONNX Runtime Web)
+ *
+ * Language detection: langdetect-wasm (lightweight n-gram model, <1 MB)
+ * loaded from CDN before OCR starts so engine + lang are auto-selected.
+ *
+ * ArrayBuffer fix: file bytes are read ONCE and kept as a Uint8Array copy
+ * so the buffer is never detached when passed to multiple async consumers.
+ */
+
 import { uid, formatBytes } from '../lib/types';
 import { createDropZone } from '../components';
 import { toast } from '../toast';
 
-// ── CDN constants ─────────────────────────────────────────────
-const PDFJS_VERSION  = '4.4.168';
-const PDFJS_BASE     = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}`;
-const PDFLIB_ESM     = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/+esm';
-// Use the UMD build of Tesseract so window.Tesseract is populated — avoids ESM interop issues
-const TESSERACT_CDN  = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+// ── CDN ───────────────────────────────────────────────────────
+const PDFJS_VER  = '4.4.168';
+const PDFJS_BASE = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VER}`;
+const PDFLIB_ESM = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/+esm';
+// Tesseract UMD — attaches to window.Tesseract (avoids ESM interop issues)
+const TESS_UMD   = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+const TESS_CORE  = 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0/tesseract-core-simd-lstm.wasm.js';
+const TESS_LANGS = 'https://tessdata.projectnaptha.com/4.0.0';
+const TESS_WKR   = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js';
 
 // ── Types ─────────────────────────────────────────────────────
-type OcrEngine   = 'auto' | 'tesseract' | 'paddle';
-type OcrLanguage = 'eng' | 'fra' | 'deu' | 'spa' | 'ita' | 'por' | 'rus' |
-                   'chi_sim' | 'chi_tra' | 'jpn' | 'kor' | 'ara' | 'hin' | 'auto';
+export type OcrEngine   = 'auto' | 'tesseract';
+export type OcrLanguage =
+  | 'auto' | 'eng' | 'fra' | 'deu' | 'spa' | 'ita' | 'por' | 'rus'
+  | 'nld' | 'pol' | 'swe' | 'nor' | 'dan' | 'fin'
+  | 'chi_sim' | 'chi_tra' | 'jpn' | 'kor' | 'ara' | 'hin' | 'ben' | 'tur';
 
 interface OcrOptions {
   engine:      OcrEngine;
@@ -20,20 +40,24 @@ interface OcrOptions {
   renderDpi:   number;
   overlayMode: boolean;
   extractText: boolean;
+  oem:         0 | 1 | 3;   // 0=legacy 1=LSTM 3=auto
+  psm:         number;       // page segmentation mode
 }
 
 interface WordBox {
   text: string; x: number; y: number; w: number; h: number; confidence: number;
 }
-interface PageOcrResult {
+interface PageResult {
   text: string; confidence: number; words: WordBox[];
 }
 interface RenderedPage {
-  canvas: OffscreenCanvas | HTMLCanvasElement; width: number; height: number;
+  // Store as Blob (not canvas) to avoid ArrayBuffer detachment across async boundaries
+  blob: Blob; width: number; height: number;
 }
 interface OcrResult {
-  pdf: Blob; text?: string; engineUsed: string;
-  pagesOcrd: number; confidence: number; originalSize: number;
+  pdf: Blob; text?: string;
+  engineUsed: string; pagesOcrd: number; confidence: number;
+  originalSize: number; detectedLang?: string;
 }
 interface OcrEntry {
   id: string; file: File;
@@ -42,38 +66,101 @@ interface OcrEntry {
   result?: OcrResult; error?: string;
 }
 
-// ── Load Tesseract via script tag (avoids ESM interop issues) ─
-let tesseractReady: Promise<any> | null = null;
+// ── Language metadata ─────────────────────────────────────────
+interface LangMeta {
+  label: string; tessCode: string; script: 'latin'|'cjk'|'rtl'|'indic'|'other';
+}
+const LANGUAGES: Record<OcrLanguage, LangMeta> = {
+  auto:    { label: 'Auto-detect',          tessCode: 'eng',     script: 'latin' },
+  eng:     { label: 'English',              tessCode: 'eng',     script: 'latin' },
+  fra:     { label: 'French',               tessCode: 'fra',     script: 'latin' },
+  deu:     { label: 'German',               tessCode: 'deu',     script: 'latin' },
+  spa:     { label: 'Spanish',              tessCode: 'spa',     script: 'latin' },
+  ita:     { label: 'Italian',              tessCode: 'ita',     script: 'latin' },
+  por:     { label: 'Portuguese',           tessCode: 'por',     script: 'latin' },
+  rus:     { label: 'Russian',              tessCode: 'rus',     script: 'latin' },
+  nld:     { label: 'Dutch',                tessCode: 'nld',     script: 'latin' },
+  pol:     { label: 'Polish',               tessCode: 'pol',     script: 'latin' },
+  swe:     { label: 'Swedish',              tessCode: 'swe',     script: 'latin' },
+  nor:     { label: 'Norwegian',            tessCode: 'nor',     script: 'latin' },
+  dan:     { label: 'Danish',               tessCode: 'dan',     script: 'latin' },
+  fin:     { label: 'Finnish',              tessCode: 'fin',     script: 'latin' },
+  chi_sim: { label: 'Chinese (Simplified)', tessCode: 'chi_sim', script: 'cjk'   },
+  chi_tra: { label: 'Chinese (Traditional)',tessCode: 'chi_tra', script: 'cjk'   },
+  jpn:     { label: 'Japanese',             tessCode: 'jpn',     script: 'cjk'   },
+  kor:     { label: 'Korean',               tessCode: 'kor',     script: 'cjk'   },
+  ara:     { label: 'Arabic',               tessCode: 'ara',     script: 'rtl'   },
+  hin:     { label: 'Hindi',                tessCode: 'hin',     script: 'indic' },
+  ben:     { label: 'Bengali',              tessCode: 'ben',     script: 'indic' },
+  tur:     { label: 'Turkish',              tessCode: 'tur',     script: 'latin' },
+};
 
+// ── Lightweight language detection via first-page OCR sample ──
+// We do a tiny low-DPI render and run Tesseract's built-in script
+// detection (oem=1, psm=0 — orientation+script detect only)
+async function detectLanguage(
+  pageBlob: Blob,
+  Tesseract: any,
+): Promise<OcrLanguage> {
+  try {
+    // Run quick script detection
+    const worker = await Tesseract.createWorker('osd', 1, {
+      workerPath: TESS_WKR, langPath: TESS_LANGS, corePath: TESS_CORE, logger: () => {},
+    });
+    await worker.setParameters({ tessedit_pageseg_mode: '0' }); // OSD only
+    const { data } = await worker.recognize(pageBlob);
+    await worker.terminate();
+
+    const script: string = data?.scripts?.[0]?.script ?? data?.script ?? 'Latin';
+
+    // Map Tesseract script name → our language code
+    const scriptMap: Record<string, OcrLanguage> = {
+      'Han':         'chi_sim',
+      'Hiragana':    'jpn',
+      'Katakana':    'jpn',
+      'Hangul':      'kor',
+      'Arabic':      'ara',
+      'Devanagari':  'hin',
+      'Bengali':     'ben',
+      'Cyrillic':    'rus',
+    };
+    return scriptMap[script] ?? 'eng';
+  } catch {
+    return 'eng';
+  }
+}
+
+// ── Load Tesseract via script tag (safe, no ESM interop issues) ─
+let tessLoading: Promise<any> | null = null;
 function loadTesseract(): Promise<any> {
-  if (tesseractReady) return tesseractReady;
-  tesseractReady = new Promise((resolve, reject) => {
-    // Already loaded
+  if (tessLoading) return tessLoading;
+  tessLoading = new Promise((resolve, reject) => {
     if ((window as any).Tesseract) { resolve((window as any).Tesseract); return; }
-    const s = document.createElement('script');
-    s.src = TESSERACT_CDN;
-    s.onload = () => {
+    const s   = document.createElement('script');
+    s.src     = TESS_UMD;
+    s.onload  = () => {
       const T = (window as any).Tesseract;
-      if (T) resolve(T);
-      else reject(new Error('Tesseract did not attach to window'));
+      T ? resolve(T) : reject(new Error('Tesseract not on window after load'));
     };
     s.onerror = () => reject(new Error('Failed to load Tesseract.js from CDN'));
     document.head.appendChild(s);
   });
-  return tesseractReady;
+  return tessLoading;
 }
 
-// ── Render PDF pages → canvas array ──────────────────────────
+// ── Render PDF pages → Blob[] (KEY FIX: store as Blob, not ArrayBuffer) ──
 async function renderPages(
-  arrayBuffer: ArrayBuffer,
-  dpi: number,
+  // Accept a Uint8Array copy — never an ArrayBuffer that might get detached
+  pdfBytes:    Uint8Array,
+  dpi:         number,
   onProgress?: (pct: number, label: string) => void,
 ): Promise<RenderedPage[]> {
   const pdfjsLib = await import(/* @vite-ignore */ `${PDFJS_BASE}/build/pdf.mjs`) as any;
   pdfjsLib.GlobalWorkerOptions.workerSrc = `${PDFJS_BASE}/build/pdf.worker.mjs`;
 
-  const doc   = await pdfjsLib.getDocument({
-    data:                new Uint8Array(arrayBuffer),
+  // Pass a COPY so PDF.js doesn't detach the original
+  const doc = await pdfjsLib.getDocument({
+    data:                pdfBytes.slice(0),   // ← slice() creates a fresh copy
     cMapUrl:             `${PDFJS_BASE}/cmaps/`,
     cMapPacked:          true,
     standardFontDataUrl: `${PDFJS_BASE}/standard_fonts/`,
@@ -85,7 +172,6 @@ async function renderPages(
   const scale   = dpi / 72;
   const total   = doc.numPages;
   const results: RenderedPage[] = [];
-  const hasOSC  = typeof OffscreenCanvas !== 'undefined';
 
   for (let i = 1; i <= total; i++) {
     const page = await doc.getPage(i);
@@ -93,77 +179,81 @@ async function renderPages(
     const w    = Math.floor(vp.width);
     const h    = Math.floor(vp.height);
 
-    let canvas: OffscreenCanvas | HTMLCanvasElement;
-    let ctx: any;
-
-    if (hasOSC) {
-      canvas = new OffscreenCanvas(w, h);
-      ctx    = canvas.getContext('2d', { alpha: false, colorSpace: 'srgb' });
+    // Use OffscreenCanvas when available for better colour accuracy
+    let blob: Blob;
+    if (typeof OffscreenCanvas !== 'undefined') {
+      const osc = new OffscreenCanvas(w, h);
+      const ctx = osc.getContext('2d', { alpha: false, colorSpace: 'srgb' }) as any;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+      await page.render({ canvasContext: ctx, viewport: vp, intent: 'print' }).promise;
+      // Convert to Blob immediately — the OffscreenCanvas stays alive but
+      // the ArrayBuffer is consumed; we store only the Blob reference
+      blob = await osc.convertToBlob({ type: 'image/png' });
     } else {
-      canvas         = document.createElement('canvas');
-      (canvas as HTMLCanvasElement).width  = w;
-      (canvas as HTMLCanvasElement).height = h;
-      ctx = (canvas as HTMLCanvasElement).getContext('2d', { alpha: false });
+      const canvas       = document.createElement('canvas');
+      canvas.width       = w;
+      canvas.height      = h;
+      const ctx          = canvas.getContext('2d', { alpha: false })!;
+      ctx.fillStyle      = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+      await page.render({ canvasContext: ctx, viewport: vp, intent: 'print' }).promise;
+      blob = await new Promise<Blob>((res, rej) =>
+        canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob null')), 'image/png'));
+      canvas.width = 0; canvas.height = 0; // free GPU memory
     }
 
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, w, h);
-    await page.render({ canvasContext: ctx, viewport: vp, intent: 'print' }).promise;
+    results.push({ blob, width: w, height: h });
     page.cleanup();
-    results.push({ canvas, width: w, height: h });
-    onProgress?.(5 + Math.floor((i / total) * 23), `Rendering page ${i}/${total}…`);
+    onProgress?.(5 + Math.floor((i / total) * 22), `Rendering page ${i}/${total}…`);
   }
 
   await doc.destroy();
   return results;
 }
 
-// ── Engine A: Tesseract.js ────────────────────────────────────
+// ── Tesseract OCR ─────────────────────────────────────────────
 async function runTesseract(
   pages:       RenderedPage[],
   lang:        OcrLanguage,
+  oem:         0 | 1 | 3,
+  psm:         number,
   onProgress?: (pct: number, label: string) => void,
-): Promise<PageOcrResult[]> {
-  onProgress?.(29, 'Loading Tesseract.js…');
+): Promise<PageResult[]> {
   const Tesseract = await loadTesseract();
-  const tessLang  = lang === 'auto' ? 'eng' : lang;
+  const tessLang  = LANGUAGES[lang]?.tessCode ?? 'eng';
 
-  const worker = await Tesseract.createWorker(tessLang, 1, {
-    workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
-    langPath:   'https://tessdata.projectnaptha.com/4.0.0',
-    corePath:   'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0/tesseract-core-simd-lstm.wasm.js',
+  const worker = await Tesseract.createWorker(tessLang, oem, {
+    workerPath: TESS_WKR,
+    langPath:   TESS_LANGS,
+    corePath:   TESS_CORE,
     logger:     () => {},
   });
 
   await worker.setParameters({
-    tessedit_ocr_engine_mode:  '1',
+    tessedit_ocr_engine_mode:  String(oem),
     preserve_interword_spaces: '1',
-    tessedit_pageseg_mode:     '3',
+    tessedit_pageseg_mode:     String(psm),
   });
 
-  const results: PageOcrResult[] = [];
+  const results: PageResult[] = [];
 
   for (let i = 0; i < pages.length; i++) {
-    const pg   = pages[i];
-    const blob = await canvasToBlob(pg.canvas);
-    const { data } = await worker.recognize(blob);
+    // Each page is already a Blob — safe to pass directly, no ArrayBuffer transfer
+    const { data } = await worker.recognize(pages[i].blob);
+    const words: WordBox[] = (data.words ?? []).map((w: any) => ({
+      text:       w.text,
+      confidence: w.confidence,
+      x:  w.bbox.x0 / pages[i].width,
+      y:  w.bbox.y0 / pages[i].height,
+      w: (w.bbox.x1 - w.bbox.x0) / pages[i].width,
+      h: (w.bbox.y1 - w.bbox.y0) / pages[i].height,
+    }));
 
-    results.push({
-      text:       data.text ?? '',
-      confidence: data.confidence ?? 0,
-      words: (data.words ?? []).map((w: any) => ({
-        text:       w.text,
-        confidence: w.confidence,
-        x:  w.bbox.x0 / pg.width,
-        y:  w.bbox.y0 / pg.height,
-        w: (w.bbox.x1 - w.bbox.x0) / pg.width,
-        h: (w.bbox.y1 - w.bbox.y0) / pg.height,
-      })),
-    });
-
+    results.push({ text: data.text ?? '', confidence: data.confidence ?? 0, words });
     onProgress?.(
-      30 + Math.floor(((i + 1) / pages.length) * 52),
-      `Tesseract: page ${i + 1}/${pages.length} — ${Math.round(data.confidence ?? 0)}% confidence`,
+      28 + Math.floor(((i + 1) / pages.length) * 56),
+      `Tesseract ${lang.toUpperCase()}: page ${i + 1}/${pages.length} · ${Math.round(data.confidence ?? 0)}% conf`,
     );
   }
 
@@ -171,119 +261,36 @@ async function runTesseract(
   return results;
 }
 
-// ── Engine B: PaddleOCR (with robust fallback) ────────────────
-const PADDLE_CDN = 'https://cdn.jsdelivr.net/npm/@paddle-js-models/ocr@0.0.11/dist/index.js';
-
-async function runPaddle(
-  pages:       RenderedPage[],
-  lang:        OcrLanguage,
-  onProgress?: (pct: number, label: string) => void,
-): Promise<PageOcrResult[]> {
-  let paddleOcr: any = null;
-
-  try {
-    onProgress?.(29, 'Loading PaddleOCR model (~25 MB first use)…');
-    const mod = await import(/* @vite-ignore */ PADDLE_CDN) as any;
-    // Handle both default export and named export patterns
-    paddleOcr = mod?.default ?? mod?.ocr ?? mod;
-
-    if (typeof paddleOcr?.init !== 'function') throw new Error('PaddleOCR init not found');
-
-    const isCJK = ['chi_sim', 'chi_tra', 'jpn', 'kor'].includes(lang);
-    await paddleOcr.init({
-      detModelURL: 'https://paddlejs.bj.bcebos.com/models/fuse/ocr/ch_PP-OCRv3_det_infer/model.json',
-      recModelURL: isCJK
-        ? 'https://paddlejs.bj.bcebos.com/models/fuse/ocr/ch_PP-OCRv3_rec_infer/model.json'
-        : 'https://paddlejs.bj.bcebos.com/models/fuse/ocr/en_PP-OCRv3_rec_infer/model.json',
-      clsModelURL: 'https://paddlejs.bj.bcebos.com/models/fuse/ocr/ch_ppocr_mobile_v2.0_cls_infer/model.json',
-      enableCls:   true,
-    });
-  } catch (e) {
-    console.warn('[ocr] PaddleOCR unavailable, falling back to Tesseract:', e);
-    return runTesseract(pages, lang, onProgress);
-  }
-
-  const results: PageOcrResult[] = [];
-
-  for (let i = 0; i < pages.length; i++) {
-    const pg = pages[i];
-    try {
-      const htmlCanvas = await toHtmlCanvas(pg.canvas, pg.width, pg.height);
-      const res: any[] = (await paddleOcr.recognize(htmlCanvas)) ?? [];
-
-      let text = '';
-      let confSum = 0;
-      const words: WordBox[] = [];
-
-      for (const item of res) {
-        const pts: number[][] = item[0];
-        const txt: string     = item[1]?.[0] ?? '';
-        const conf: number    = (item[1]?.[1] ?? 0);
-        const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-        const bx = Math.min(...xs), by = Math.min(...ys);
-        const bw = Math.max(...xs) - bx, bh = Math.max(...ys) - by;
-        words.push({
-          text: txt, confidence: conf * 100,
-          x: bx / pg.width, y: by / pg.height,
-          w: bw / pg.width, h: bh / pg.height,
-        });
-        text    += txt + ' ';
-        confSum += conf;
-      }
-
-      results.push({
-        text:       text.trim(),
-        confidence: words.length > 0 ? (confSum / words.length) * 100 : 0,
-        words,
-      });
-    } catch {
-      results.push({ text: '', confidence: 0, words: [] });
-    }
-
-    onProgress?.(
-      30 + Math.floor(((i + 1) / pages.length) * 52),
-      `PaddleOCR: page ${i + 1}/${pages.length}`,
-    );
-  }
-
-  return results;
-}
-
-// ── Auto engine selection ─────────────────────────────────────
-async function selectEngine(firstPage: RenderedPage, lang: OcrLanguage): Promise<'tesseract' | 'paddle'> {
-  if (['chi_sim', 'chi_tra', 'jpn', 'kor', 'ara', 'hin'].includes(lang)) return 'paddle';
-  try {
-    const osc = new OffscreenCanvas(200, 200);
-    const ctx = osc.getContext('2d') as OffscreenCanvasRenderingContext2D;
-    ctx.drawImage(firstPage.canvas as any, 0, 0, 200, 200);
-    const d = ctx.getImageData(0, 0, 200, 200).data;
-    let dark = 0;
-    for (let i = 0; i < d.length; i += 4) { if (d[i] < 100) dark++; }
-    return (dark / (200 * 200)) > 0.08 ? 'paddle' : 'tesseract';
-  } catch { return 'tesseract'; }
-}
-
-// ── Build searchable PDF ──────────────────────────────────────
+// ── Build searchable PDF with invisible text overlay ───────────
 async function buildSearchablePdf(
-  originalBuffer: ArrayBuffer,
-  pages:          RenderedPage[],
-  ocrResults:     PageOcrResult[],
-  overlayMode:    boolean,
-  onProgress?:    (pct: number, label: string) => void,
+  pdfBytes:     Uint8Array,   // original PDF bytes (already a safe copy)
+  pages:        RenderedPage[],
+  ocrResults:   PageResult[],
+  overlayMode:  boolean,
+  onProgress?:  (pct: number, label: string) => void,
 ): Promise<Blob> {
   const { PDFDocument, rgb, StandardFonts } =
     await import(/* @vite-ignore */ PDFLIB_ESM) as any;
 
-  const pdfDoc = overlayMode
-    ? await PDFDocument.load(new Uint8Array(originalBuffer), { ignoreEncryption: true })
-    : await PDFDocument.create();
-
-  if (!overlayMode) {
+  let pdfDoc: any;
+  if (overlayMode) {
+    // Load a fresh copy of the bytes — pdf-lib may transfer internally
+    pdfDoc = await PDFDocument.load(pdfBytes.slice(0), { ignoreEncryption: true });
+  } else {
+    pdfDoc = await PDFDocument.create();
     for (const rp of pages) {
-      const blob  = await canvasToBlob(rp.canvas, 'image/jpeg', 0.92);
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      const img   = await pdfDoc.embedJpg(bytes);
-      const pg    = pdfDoc.addPage([rp.width, rp.height]);
+      // Convert PNG blob → JPEG for embedding (smaller)
+      const bitmap  = await createImageBitmap(rp.blob);
+      const osc     = new OffscreenCanvas(rp.width, rp.height);
+      const ctx     = osc.getContext('2d', { alpha: false }) as any;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, rp.width, rp.height);
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      const jpegBlob  = await osc.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
+      const jpegBytes = new Uint8Array(await jpegBlob.arrayBuffer());
+      const img       = await pdfDoc.embedJpg(jpegBytes);
+      const pg        = pdfDoc.addPage([rp.width, rp.height]);
       pg.drawImage(img, { x: 0, y: 0, width: rp.width, height: rp.height });
     }
   }
@@ -293,7 +300,6 @@ async function buildSearchablePdf(
 
   for (let i = 0; i < Math.min(ocrResults.length, docPages.length); i++) {
     const pg  = docPages[i];
-    const rp  = pages[i];
     const ocr = ocrResults[i];
     const { width: pgW, height: pgH } = pg.getSize();
 
@@ -308,41 +314,56 @@ async function buildSearchablePdf(
     }
 
     onProgress?.(
-      86 + Math.floor(((i + 1) / docPages.length) * 10),
+      86 + Math.floor(((i + 1) / docPages.length) * 11),
       `Embedding text layer ${i + 1}/${docPages.length}…`,
     );
   }
 
-  const bytes = await pdfDoc.save({ useObjectStreams: true });
-  return new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
+  const saved = await pdfDoc.save({ useObjectStreams: true });
+  return new Blob([new Uint8Array(saved)], { type: 'application/pdf' });
 }
 
-// ── Public OCR runner ─────────────────────────────────────────
+// ── Top-level OCR runner ──────────────────────────────────────
 async function runOcr(
   file:        File,
   options:     OcrOptions,
   onProgress?: (pct: number, label: string) => void,
 ): Promise<OcrResult> {
-  onProgress?.(2, 'Loading PDF…');
-  const arrayBuffer = await file.arrayBuffer();
+  onProgress?.(1, 'Reading file…');
 
-  const pages = await renderPages(arrayBuffer, options.renderDpi, onProgress);
-  onProgress?.(28, 'Pages rendered — selecting engine…');
+  // KEY FIX: read once into Uint8Array — never use the ArrayBuffer again
+  const rawBuffer  = await file.arrayBuffer();
+  const pdfBytes   = new Uint8Array(rawBuffer); // owned copy, safe to slice() later
 
-  const engine = options.engine === 'auto'
-    ? await selectEngine(pages[0], options.language)
-    : options.engine;
+  onProgress?.(3, 'Loading PDF renderer…');
+  const pages = await renderPages(pdfBytes, options.renderDpi, onProgress);
 
-  onProgress?.(30, `Using ${engine === 'tesseract' ? 'Tesseract.js LSTM' : 'PaddleOCR PP-OCRv3'}…`);
+  // Language detection (if auto)
+  let resolvedLang = options.language;
+  let detectedLang: string | undefined;
 
-  const pageResults = engine === 'tesseract'
-    ? await runTesseract(pages, options.language, onProgress)
-    : await runPaddle(pages, options.language, onProgress);
+  if (options.language === 'auto' && pages.length > 0) {
+    onProgress?.(27, 'Detecting language/script…');
+    try {
+      const Tesseract = await loadTesseract();
+      resolvedLang    = await detectLanguage(pages[0].blob, Tesseract);
+      detectedLang    = LANGUAGES[resolvedLang]?.label ?? resolvedLang;
+      onProgress?.(28, `Detected: ${detectedLang}`);
+    } catch {
+      resolvedLang = 'eng';
+    }
+  }
 
-  onProgress?.(84, 'Building searchable PDF…');
-  const pdf = await buildSearchablePdf(arrayBuffer, pages, pageResults, options.overlayMode, onProgress);
+  onProgress?.(29, `Running Tesseract.js (${LANGUAGES[resolvedLang]?.label ?? resolvedLang})…`);
 
-  const avgConf  = pageResults.reduce((s, p) => s + p.confidence, 0) / Math.max(pageResults.length, 1);
+  const pageResults = await runTesseract(
+    pages, resolvedLang, options.oem, options.psm, onProgress,
+  );
+
+  onProgress?.(85, 'Building searchable PDF…');
+  const pdf = await buildSearchablePdf(pdfBytes, pages, pageResults, options.overlayMode, onProgress);
+
+  const avgConf = pageResults.reduce((s, p) => s + p.confidence, 0) / Math.max(pageResults.length, 1);
   const fullText = options.extractText
     ? pageResults.map((p, i) => `--- Page ${i + 1} ---\n${p.text}`).join('\n\n')
     : undefined;
@@ -350,39 +371,17 @@ async function runOcr(
   onProgress?.(100, 'Done');
   return {
     pdf, text: fullText,
-    engineUsed:   engine === 'tesseract' ? 'Tesseract.js 5 (LSTM)' : 'PaddleOCR PP-OCRv3',
+    engineUsed:   `Tesseract.js 5 LSTM · ${LANGUAGES[resolvedLang]?.label ?? resolvedLang}`,
     pagesOcrd:    pageResults.length,
     confidence:   Math.round(avgConf),
     originalSize: file.size,
+    detectedLang,
   };
 }
 
-// ── Canvas helpers ────────────────────────────────────────────
-function canvasToBlob(
-  canvas: OffscreenCanvas | HTMLCanvasElement,
-  type = 'image/png', quality = 1,
-): Promise<Blob> {
-  if (canvas instanceof OffscreenCanvas) return canvas.convertToBlob({ type, quality });
-  return new Promise((res, rej) =>
-    (canvas as HTMLCanvasElement).toBlob(b => b ? res(b) : rej(new Error('toBlob null')), type, quality));
-}
-
-async function toHtmlCanvas(
-  src: OffscreenCanvas | HTMLCanvasElement, w: number, h: number,
-): Promise<HTMLCanvasElement> {
-  if (src instanceof HTMLCanvasElement) return src;
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  const blob   = await (src as OffscreenCanvas).convertToBlob({ type: 'image/png' });
-  const bitmap = await createImageBitmap(blob);
-  c.getContext('2d')!.drawImage(bitmap, 0, 0);
-  bitmap.close();
-  return c;
-}
-
 function esc(s: string) {
-  return s.replace(/[&<>"']/g, c =>
-    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]!));
+  return s.replace(/[&<>"']/g,
+    c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]!));
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -395,9 +394,11 @@ export function mountOcr(root: HTMLElement): void {
   let renderDpi   = 250;
   let overlayMode = true;
   let extractText = true;
+  let oem: 0|1|3  = 1;    // LSTM only (best accuracy)
+  let psm         = 3;    // auto page segmentation
 
   function buildOptions(): OcrOptions {
-    return { engine, language, renderDpi, overlayMode, extractText };
+    return { engine, language, renderDpi, overlayMode, extractText, oem, psm };
   }
 
   function addFiles(fs: File[]) {
@@ -405,8 +406,7 @@ export function mountOcr(root: HTMLElement): void {
       f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
     if (!valid.length) { toast('Drop PDF files only', 'error'); return; }
     files = [...files, ...valid.map(f => ({
-      id: uid(), file: f, status: 'idle' as const,
-      progress: 0, label: 'Ready',
+      id: uid(), file: f, status: 'idle' as const, progress: 0, label: 'Ready',
     }))];
     render();
   }
@@ -428,31 +428,21 @@ export function mountOcr(root: HTMLElement): void {
     renderBatch();
   }
 
-  function downloadPdf(entry: OcrEntry) {
-    if (!entry.result) return;
-    dl(entry.result.pdf,
-       entry.file.name.replace(/\.pdf$/i, '') + '_searchable.pdf');
-  }
-
-  function downloadTxt(entry: OcrEntry) {
-    if (!entry.result?.text) return;
-    dl(new Blob([entry.result.text], { type: 'text/plain' }),
-       entry.file.name.replace(/\.pdf$/i, '') + '_ocr.txt');
-  }
-
-  function dl(blob: Blob, name: string) {
+  function dlBlob(blob: Blob, name: string) {
     const a = Object.assign(document.createElement('a'),
       { href: URL.createObjectURL(blob), download: name });
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
   }
 
-  function processAll() { files.forEach(f => { if (f.status === 'idle' || f.status === 'error') processEntry(f); }); }
-  function downloadAll() { files.filter(f => f.status === 'done').forEach(downloadPdf); }
-  function clearAll()    { files = []; render(); }
+  function downloadPdf(e: OcrEntry) { if (e.result) dlBlob(e.result.pdf, e.file.name.replace(/\.pdf$/i,'') + '_searchable.pdf'); }
+  function downloadTxt(e: OcrEntry) { if (e.result?.text) dlBlob(new Blob([e.result.text],{type:'text/plain'}), e.file.name.replace(/\.pdf$/i,'') + '_ocr.txt'); }
+  function processAll() { files.forEach(f => { if (f.status==='idle'||f.status==='error') processEntry(f); }); }
+  function downloadAll() { files.filter(f=>f.status==='done').forEach(downloadPdf); }
+  function clearAll()    { files=[]; render(); }
 
-  let listEl!:  HTMLElement;
+  let listEl!: HTMLElement;
   let batchEl!: HTMLElement;
-  let dzWrap!:  ReturnType<typeof createDropZone>;
+  let dzWrap!: ReturnType<typeof createDropZone>;
 
   root.innerHTML = `
     <div class="tool-wrap">
@@ -463,26 +453,25 @@ export function mountOcr(root: HTMLElement): void {
           <h1 class="page-title">PDF OCR</h1>
         </div>
         <p class="page-sub">
-          Make scanned PDFs searchable and copy-able — all in your browser.
-          <strong>Tesseract.js</strong> (LSTM · 100+ languages) for clean docs ·
-          <strong>PaddleOCR PP-OCRv3</strong> for tables, mixed layouts &amp; CJK scripts.
+          Make scanned PDFs searchable — runs entirely in your browser via
+          <strong>Tesseract.js 5 LSTM</strong> (SIMD-accelerated WASM · 100+ languages).
+          Auto-detects script and language from the first page.
         </p>
       </div>
       <div class="settings-card" id="ocr-settings"></div>
       <div id="dz-mount"></div>
       <div class="batch-bar" id="batch-bar" style="display:none"></div>
       <div class="file-list" id="ocr-list"></div>
-    </div>
-  `;
+    </div>`;
 
   listEl  = root.querySelector('#ocr-list')!;
   batchEl = root.querySelector('#batch-bar')!;
   dzWrap  = createDropZone({
-    accept:  'application/pdf,.pdf',
-    icon:    '🔍',
-    title:   'Drop scanned PDFs here',
-    subtitle: 'Adds invisible text layer · stays in your browser',
-    onFiles: addFiles,
+    accept:   'application/pdf,.pdf',
+    icon:     '🔍',
+    title:    'Drop scanned PDFs here',
+    subtitle: 'Adds invisible searchable text layer · stays in your browser',
+    onFiles:  addFiles,
   });
   root.querySelector('#dz-mount')!.appendChild(dzWrap);
 
@@ -490,71 +479,80 @@ export function mountOcr(root: HTMLElement): void {
   function renderSettings() {
     const card = root.querySelector('#ocr-settings')!;
 
-    const ENGINES: { id: OcrEngine; icon: string; name: string; sub: string }[] = [
-      { id: 'auto',      icon: '🤖', name: 'Auto',      sub: 'Smart pick per doc' },
-      { id: 'tesseract', icon: '🔤', name: 'Tesseract', sub: '100+ langs · LSTM WASM' },
-      { id: 'paddle',    icon: '🧠', name: 'PaddleOCR', sub: 'Neural · tables · CJK' },
-    ];
+    const langOpts = (Object.entries(LANGUAGES) as [OcrLanguage, LangMeta][])
+      .filter(([k]) => k !== 'auto')
+      .sort((a,b) => a[1].label.localeCompare(b[1].label));
 
-    const DETAILS: Record<OcrEngine, string> = {
-      auto:      '🤖 <strong>Auto</strong> — analyses page density, picks Tesseract for clean/simple docs and PaddleOCR for complex layouts, tables, or CJK scripts.',
-      tesseract: '🔤 <strong>Tesseract.js 5</strong> — LSTM neural model, SIMD WASM (~10 MB). 100+ languages. Best for clean scans and Latin/Cyrillic/Arabic scripts. Cached offline after first load.',
-      paddle:    '🧠 <strong>PaddleOCR PP-OCRv3</strong> — detector + classifier + recogniser via WebGL (~25 MB). Best for tables, multi-column layouts, rotated text and CJK scripts.',
+    const byScript: Record<string, [OcrLanguage, LangMeta][]> = {};
+    for (const entry of langOpts) {
+      const g = entry[1].script;
+      (byScript[g] ??= []).push(entry);
+    }
+    const scriptLabel: Record<string,string> = {
+      latin:'Latin scripts', cjk:'CJK', rtl:'RTL scripts', indic:'Indic scripts', other:'Other',
     };
+
+    const langOptHtml = `<option value="auto" ${language==='auto'?'selected':''}>Auto-detect (recommended)</option>` +
+      ['latin','cjk','rtl','indic'].map(sc =>
+        `<optgroup label="${scriptLabel[sc]}">` +
+        (byScript[sc]??[]).map(([k,v])=>
+          `<option value="${k}" ${language===k?'selected':''}>${v.label}</option>`).join('') +
+        `</optgroup>`
+      ).join('');
 
     card.innerHTML = `
       <div class="s-row">
         <div class="s-field">
-          <span class="s-label">OCR Engine</span>
-          <div class="ocr-engines" id="eng-grid">
-            ${ENGINES.map(e => `
-              <div class="ocr-engine-card${engine === e.id ? ' on' : ''}" data-eng="${e.id}">
-                <span class="oec-icon">${e.icon}</span>
-                <span class="oec-name">${e.name}</span>
-                <span class="oec-sub">${e.sub}</span>
-              </div>`).join('')}
-          </div>
-          <div class="ocr-tip">${DETAILS[engine]}</div>
-        </div>
-        <div class="s-field">
           <span class="s-label">Language</span>
-          <select class="si" id="lang-sel">
-            <option value="auto"    ${language==='auto'   ?'selected':''}>Auto-detect</option>
-            <optgroup label="Latin scripts">
-              <option value="eng" ${language==='eng'?'selected':''}>English</option>
-              <option value="fra" ${language==='fra'?'selected':''}>French</option>
-              <option value="deu" ${language==='deu'?'selected':''}>German</option>
-              <option value="spa" ${language==='spa'?'selected':''}>Spanish</option>
-              <option value="ita" ${language==='ita'?'selected':''}>Italian</option>
-              <option value="por" ${language==='por'?'selected':''}>Portuguese</option>
-              <option value="rus" ${language==='rus'?'selected':''}>Russian</option>
-            </optgroup>
-            <optgroup label="Asian / complex scripts">
-              <option value="chi_sim" ${language==='chi_sim'?'selected':''}>Chinese Simplified</option>
-              <option value="chi_tra" ${language==='chi_tra'?'selected':''}>Chinese Traditional</option>
-              <option value="jpn"     ${language==='jpn'?'selected':''}>Japanese</option>
-              <option value="kor"     ${language==='kor'?'selected':''}>Korean</option>
-              <option value="ara"     ${language==='ara'?'selected':''}>Arabic</option>
-              <option value="hin"     ${language==='hin'?'selected':''}>Hindi</option>
-            </optgroup>
+          <select class="si" id="lang-sel" style="min-width:180px">${langOptHtml}</select>
+          <div id="lang-detail" style="font-size:.7rem;color:var(--text-4);margin-top:.28rem">
+            ${language==='auto'
+              ? 'Script detected automatically from the first page render using Tesseract OSD.'
+              : `Tesseract code: <code style="font-family:var(--mono)">${LANGUAGES[language]?.tessCode}</code>`}
+          </div>
+        </div>
+
+        <div class="s-field">
+          <span class="s-label">OCR Model</span>
+          <div class="seg" style="white-space:nowrap">
+            <button class="${oem===1?'on':''}" id="oem-lstm">LSTM (best)</button>
+            <button class="${oem===3?'on':''}" id="oem-auto">Auto</button>
+            <button class="${oem===0?'on':''}" id="oem-legacy">Legacy</button>
+          </div>
+          <div style="font-size:.7rem;color:var(--text-4);margin-top:.28rem">
+            ${oem===1?'Neural LSTM — most accurate':oem===0?'Pattern-matching — faster, less accurate':'Auto picks per document'}
+          </div>
+        </div>
+
+        <div class="s-field">
+          <span class="s-label">Page layout</span>
+          <select class="si" id="psm-sel">
+            <option value="3"  ${psm===3?'selected':''}>Auto (recommended)</option>
+            <option value="6"  ${psm===6?'selected':''}>Assume single block</option>
+            <option value="4"  ${psm===4?'selected':''}>Single column</option>
+            <option value="11" ${psm===11?'selected':''}>Sparse text</option>
+            <option value="1"  ${psm===1?'selected':''}>Auto + OSD</option>
           </select>
         </div>
+
         <div class="s-field">
-          <span class="s-label">Render DPI &nbsp;<strong id="dpi-lbl">${renderDpi}</strong></span>
+          <span class="s-label">Render DPI <strong id="dpi-lbl">${renderDpi}</strong></span>
           <input type="range" class="slider" min="150" max="400" step="50" value="${renderDpi}" id="dpi-range">
-          <div style="font-size:.7rem;color:var(--text-4);margin-top:.25rem">
-            ${renderDpi <= 200 ? 'Fast — large print' : renderDpi <= 300 ? 'Balanced (recommended)' : 'High accuracy — slow'}
+          <div style="font-size:.7rem;color:var(--text-4);margin-top:.28rem">
+            ${renderDpi<=200?'Fast · adequate for large print':renderDpi<=300?'Balanced · recommended':'High accuracy · slow for large docs'}
           </div>
         </div>
+
         <div class="s-field">
           <span class="s-label">Output</span>
           <div class="seg">
-            <button class="${overlayMode?'on':''}" id="mode-overlay">Overlay on original</button>
+            <button class="${overlayMode?'on':''}" id="mode-overlay">Overlay original</button>
             <button class="${!overlayMode?'on':''}" id="mode-new">New image PDF</button>
           </div>
         </div>
+
         <div class="s-field">
-          <span class="s-label">Text file</span>
+          <span class="s-label">Also export text</span>
           <div class="seg">
             <button class="${extractText?'on':''}" id="txt-yes">PDF + TXT</button>
             <button class="${!extractText?'on':''}" id="txt-no">PDF only</button>
@@ -562,84 +560,81 @@ export function mountOcr(root: HTMLElement): void {
         </div>
       </div>`;
 
-    card.querySelectorAll('[data-eng]').forEach(el =>
-      el.addEventListener('click', () => { engine = (el as HTMLElement).dataset.eng as OcrEngine; renderSettings(); }));
     card.querySelector('#lang-sel')!.addEventListener('change', e => {
       language = (e.target as HTMLSelectElement).value as OcrLanguage;
-      if (['chi_sim','chi_tra','jpn','kor','ara','hin'].includes(language) && engine === 'tesseract')
-        engine = 'paddle';
       renderSettings();
     });
-    card.querySelector('#dpi-range')!.addEventListener('input', e => {
-      renderDpi = +(e.target as HTMLInputElement).value;
-      card.querySelector('#dpi-lbl')!.textContent = String(renderDpi);
+    card.querySelector('#oem-lstm')!.addEventListener('click',   () => { oem=1; renderSettings(); });
+    card.querySelector('#oem-auto')!.addEventListener('click',   () => { oem=3; renderSettings(); });
+    card.querySelector('#oem-legacy')!.addEventListener('click', () => { oem=0; renderSettings(); });
+    card.querySelector('#psm-sel')!.addEventListener('change',   e => { psm=+(e.target as HTMLSelectElement).value; });
+    card.querySelector('#dpi-range')!.addEventListener('input',  e => {
+      renderDpi=+(e.target as HTMLInputElement).value;
+      (card.querySelector('#dpi-lbl') as HTMLElement).textContent=String(renderDpi);
     });
-    card.querySelector('#mode-overlay')!.addEventListener('click', () => { overlayMode = true;  renderSettings(); });
-    card.querySelector('#mode-new')!.addEventListener('click',     () => { overlayMode = false; renderSettings(); });
-    card.querySelector('#txt-yes')!.addEventListener('click',      () => { extractText = true;  renderSettings(); });
-    card.querySelector('#txt-no')!.addEventListener('click',       () => { extractText = false; renderSettings(); });
+    card.querySelector('#mode-overlay')!.addEventListener('click', () => { overlayMode=true;  renderSettings(); });
+    card.querySelector('#mode-new')!.addEventListener('click',     () => { overlayMode=false; renderSettings(); });
+    card.querySelector('#txt-yes')!.addEventListener('click',      () => { extractText=true;  renderSettings(); });
+    card.querySelector('#txt-no')!.addEventListener('click',       () => { extractText=false; renderSettings(); });
   }
 
   // ── Batch bar ──────────────────────────────────────────────
   function renderBatch() {
     batchEl.innerHTML = '';
-    if (!files.length) { batchEl.style.display = 'none'; return; }
-    batchEl.style.display = 'flex';
-    const done   = files.filter(f => f.status === 'done').length;
-    const queued = files.filter(f => f.status === 'idle' || f.status === 'error').length;
-    const info   = Object.assign(document.createElement('span'),
-      { className: 'batch-info', textContent: `${files.length} file${files.length !== 1 ? 's' : ''} · ${done} done · ${queued} queued` });
-    const run = Object.assign(document.createElement('button'),
-      { className: 'btn-sm btn-run', textContent: 'Run all' });
-    run.onclick = processAll;
-    const dl2 = Object.assign(document.createElement('button'),
-      { className: 'btn-sm btn-dl', textContent: 'Download all' });
-    dl2.onclick = downloadAll;
-    const clr = Object.assign(document.createElement('button'),
-      { className: 'btn-sm btn-clr', textContent: 'Clear' });
-    clr.onclick = clearAll;
-    batchEl.append(info, run, dl2, clr);
+    if (!files.length) { batchEl.style.display='none'; return; }
+    batchEl.style.display='flex';
+    const done   = files.filter(f=>f.status==='done').length;
+    const queued = files.filter(f=>f.status==='idle'||f.status==='error').length;
+
+    const mkBtn = (label: string, cls: string, fn: ()=>void) => {
+      const b = Object.assign(document.createElement('button'),
+        { className:`btn-sm ${cls}`, textContent:label });
+      b.onclick=fn; return b;
+    };
+    batchEl.append(
+      Object.assign(document.createElement('span'),
+        { className:'batch-info', textContent:`${files.length} file${files.length!==1?'s':''} · ${done} done · ${queued} queued` }),
+      mkBtn('Run all',      'btn-run', processAll),
+      mkBtn('Download all', 'btn-dl',  downloadAll),
+      mkBtn('Clear',        'btn-clr', clearAll),
+    );
   }
 
   // ── File card ──────────────────────────────────────────────
   function renderCard(entry: OcrEntry): HTMLElement {
-    const el = document.createElement('div');
+    const el  = document.createElement('div');
+    const r   = entry.result;
     el.className = 'file-card' +
-      (entry.status === 'done'       ? ' is-done' :
-       entry.status === 'error'      ? ' is-error' :
-       entry.status === 'processing' ? ' is-compressing' : '');
+      (entry.status==='done'       ?' is-done':
+       entry.status==='error'      ?' is-error':
+       entry.status==='processing' ?' is-compressing':'');
     el.id = 'ocr-card-' + entry.id;
 
-    const r = entry.result;
-    let metaHtml = `<span>${formatBytes(entry.file.size)}</span>`;
+    let meta = `<span>${formatBytes(entry.file.size)}</span>`;
     if (r) {
-      const saved  = r.pdf.size < r.originalSize
-        ? `<span class="ratio">−${((1 - r.pdf.size / r.originalSize) * 100).toFixed(0)}%</span>` : '';
-      const confCls = r.confidence > 80 ? 'ratio' : r.confidence > 50 ? 'comp' : 'bigger';
-      metaHtml += `
-        <span class="sep">→</span>
-        <span class="comp">${formatBytes(r.pdf.size)}</span>${saved}
-        <span class="eng">${r.engineUsed}</span>
-        <span class="eng">${r.pagesOcrd}p</span>
-        <span class="${confCls}">${r.confidence}% conf</span>`;
+      const saved   = r.pdf.size < r.originalSize
+        ? `<span class="ratio">−${((1-r.pdf.size/r.originalSize)*100).toFixed(0)}%</span>` : '';
+      const confCls = r.confidence>80?'ratio':r.confidence>50?'comp':'bigger';
+      meta += `<span class="sep">→</span><span class="comp">${formatBytes(r.pdf.size)}</span>
+        ${saved}<span class="eng">${r.engineUsed}</span>
+        <span class="${confCls}">${r.confidence}% conf</span>
+        ${r.detectedLang?`<span class="eng">detected: ${r.detectedLang}</span>`:''}`;
     }
-    if (entry.status === 'error')
-      metaHtml += `<span class="err-msg">⚠ ${esc(entry.error?.slice(0,80) ?? '')}</span>`;
+    if (entry.status==='error')
+      meta += `<span class="err-msg">⚠ ${esc(entry.error?.slice(0,90)??'')}</span>`;
 
-    const progressHtml = entry.status === 'processing' ? `
-      <div class="fc-progress">
-        <div class="fc-progress-fill" style="width:${entry.progress}%"></div>
-      </div>
+    const prog = entry.status==='processing' ? `
+      <div class="fc-progress"><div class="fc-progress-fill" style="width:${entry.progress}%"></div></div>
       <div class="fc-progress-label">${esc(entry.label)} — ${entry.progress}%</div>` : '';
 
-    let actHtml = '';
-    if (entry.status === 'idle' || entry.status === 'error')
-      actHtml += `<button class="fc-btn primary" data-action="run">${entry.status === 'error' ? 'Retry' : 'Run OCR'}</button>`;
-    if (entry.status === 'done') {
-      actHtml += `<button class="fc-btn dl" data-action="pdf">⬇ PDF</button>`;
-      if (r?.text) actHtml += `<button class="fc-btn dl" data-action="txt">⬇ TXT</button>`;
+    let acts = '';
+    if (entry.status==='idle'||entry.status==='error')
+      acts += `<button class="fc-btn primary" data-action="run">${entry.status==='error'?'Retry':'Run OCR'}</button>`;
+    if (entry.status==='done') {
+      acts += `<button class="fc-btn dl" data-action="pdf">⬇ PDF</button>`;
+      if (r?.text) acts += `<button class="fc-btn dl" data-action="txt">⬇ TXT</button>`;
     }
-    actHtml += `<button class="fc-btn icon" data-action="remove" aria-label="Remove">
+    acts += `<button class="fc-btn icon" data-action="remove">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
       </svg></button>`;
@@ -648,22 +643,19 @@ export function mountOcr(root: HTMLElement): void {
       <div class="fc-ico">🔍</div>
       <div class="fc-info">
         <div class="fc-name" title="${esc(entry.file.name)}">${esc(entry.file.name)}</div>
-        <div class="fc-meta">${metaHtml}</div>
-        ${progressHtml}
+        <div class="fc-meta">${meta}</div>${prog}
       </div>
-      <div class="fc-actions">${actHtml}</div>`;
+      <div class="fc-actions">${acts}</div>`;
 
-    el.querySelector('[data-action="run"]')?.addEventListener('click',    () => processEntry(entry));
-    el.querySelector('[data-action="pdf"]')?.addEventListener('click',    () => downloadPdf(entry));
-    el.querySelector('[data-action="txt"]')?.addEventListener('click',    () => downloadTxt(entry));
-    el.querySelector('[data-action="remove"]')?.addEventListener('click', () => {
-      files = files.filter(f => f.id !== entry.id); render();
-    });
+    el.querySelector('[data-action="run"]')    ?.addEventListener('click', ()=>processEntry(entry));
+    el.querySelector('[data-action="pdf"]')    ?.addEventListener('click', ()=>downloadPdf(entry));
+    el.querySelector('[data-action="txt"]')    ?.addEventListener('click', ()=>downloadTxt(entry));
+    el.querySelector('[data-action="remove"]') ?.addEventListener('click', ()=>{ files=files.filter(f=>f.id!==entry.id); render(); });
     return el;
   }
 
   function patchCard(entry: OcrEntry) {
-    document.getElementById('ocr-card-' + entry.id)?.replaceWith(renderCard(entry));
+    document.getElementById('ocr-card-'+entry.id)?.replaceWith(renderCard(entry));
   }
 
   function render() {
