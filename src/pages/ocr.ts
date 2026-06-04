@@ -616,7 +616,7 @@ export function mountOcr(root: HTMLElement): void {
         ? `<span class="ratio">−${((1-r.pdf.size/r.originalSize)*100).toFixed(0)}%</span>` : '';
       const confCls = r.confidence>80?'ratio':r.confidence>50?'comp':'bigger';
       meta += `<span class="sep">→</span><span class="comp">${formatBytes(r.pdf.size)}</span>
-        ${saved}<span class="eng">${r.engineUsed}</span>
+        ${saved}<span class="eng">${esc(r.engineUsed)}</span>
         <span class="${confCls}">${r.confidence}% conf</span>
         ${r.detectedLang?`<span class="eng">detected: ${r.detectedLang}</span>`:''}`;
     }
