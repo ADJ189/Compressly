@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://compressly.pages.dev/sitemap.xml
+Sitemap: https://compressz.pages.dev/sitemap.xml
