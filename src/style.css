@@ -126,12 +126,12 @@ img, svg { display: block; }
 }
 .sp-logo {
   width: 64px; height: 64px; border-radius: 18px;
-  background: linear-gradient(135deg, var(--accent), var(--violet));
   display: flex; align-items: center; justify-content: center;
-  font-size: 1.8rem;
+  overflow: hidden;
   box-shadow: var(--shadow-acc);
   animation: spPop .5s var(--spring) .05s both;
 }
+.sp-logo svg { width: 64px; height: 64px; }
 .sp-name {
   font-size: 1.6rem; font-weight: 800; letter-spacing: -.04em;
   background: linear-gradient(135deg, var(--text) 40%, var(--accent-2));
@@ -173,7 +173,8 @@ img, svg { display: block; }
   -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   flex: 1;
 }
-.topbar-logo .logo-icon { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg,var(--accent),var(--violet)); display:flex; align-items:center; justify-content:center; font-size:.85rem; }
+.topbar-logo .logo-icon { width: 28px; height: 28px; border-radius: 8px; overflow: hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.topbar-logo .logo-icon svg { width: 28px; height: 28px; }
 .mob-menu-btn {
   width: 36px; height: 36px; border-radius: var(--r-sm);
   background: var(--bg2); border: 1px solid var(--border);
@@ -211,10 +212,10 @@ img, svg { display: block; }
 }
 .sb-logo-icon {
   width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
-  background: linear-gradient(135deg, var(--accent), var(--violet));
   display: flex; align-items: center; justify-content: center;
-  font-size: 1rem; box-shadow: var(--shadow-acc);
+  overflow: hidden; box-shadow: var(--shadow-acc);
 }
+.sb-logo-icon svg { width: 32px; height: 32px; }
 .sb-logo-text {
   font-weight: 800; font-size: .95rem; letter-spacing: -.03em;
   white-space: nowrap; overflow: hidden;
