@@ -150,7 +150,7 @@ async function structuralCompress(
 
   onProgress?.(92);
   const bytes = await pdfDoc.save({ useObjectStreams: true, addDefaultPage: false });
-  const blob  = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
+  const blob  = new Blob([bytes], { type: 'application/pdf' });
   onProgress?.(100);
 
   return {
@@ -299,7 +299,7 @@ async function canvasRender(
   if (stripMeta) stripMetadata(newPdf);
 
   const bytes = await (newPdf as any).save({ useObjectStreams: true, addDefaultPage: false });
-  const blob  = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
+  const blob  = new Blob([bytes], { type: 'application/pdf' });
 
   if (blob.size < 256) throw new Error(`Output too small (${blob.size}b) — PDF may be corrupt`);
 
