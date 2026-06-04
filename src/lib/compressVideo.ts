@@ -113,7 +113,7 @@ async function videoViaWebCodecs(
     : (opts.videoBitrate ?? 2_000_000);
 
   const codec = 'avc1.640028';
-  let hw: VideoHardwareAcceleration = 'prefer-software';
+  let hw: HardwareAcceleration = 'prefer-software';
   try {
     const s = await VideoEncoder.isConfigSupported({ codec, width: w, height: h, bitrate, framerate: 30, hardwareAcceleration: 'prefer-hardware' });
     if (s.supported) hw = 'prefer-hardware';
