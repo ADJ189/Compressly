@@ -7,7 +7,7 @@
 **Private, browser-native file compression and OCR.**  
 Nothing ever leaves your device.
 
-[![Deploy](https://img.shields.io/badge/Cloudflare_Pages-deployed-F38020?logo=cloudflare&logoColor=white)](https://compressz.pages.dev)
+[![Cloudflare Pages](https://img.shields.io/badge/Cloudflare_Pages-deployed-F38020?logo=cloudflare&logoColor=white)](https://compressz.pages.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](LICENSE)
@@ -18,78 +18,84 @@ Nothing ever leaves your device.
 
 ## Overview
 
-CompressZ compresses images, PDFs, video, audio, and GIFs — and runs OCR on scanned PDFs — entirely inside your browser. No backend, no uploads, no tracking. Every byte stays on your device.
-
-Processing uses WebAssembly (FFmpeg.wasm), the Canvas API, WebCodecs, and two neural OCR engines (Tesseract.js and PaddleOCR) loaded from CDN on first use and cached offline thereafter.
+CompressZ compresses images, PDFs, video, audio, and GIFs — and runs OCR on scanned PDFs — entirely inside your browser using WebAssembly, Canvas API, WebCodecs, and two neural OCR engines. No backend. No uploads. No tracking.
 
 ---
 
-## Features
+## Tools
 
 | Tool | Formats | Engine |
 |------|---------|--------|
-| **Images** | JPEG · PNG · WebP · AVIF · HEIC · BMP · TIFF | OffscreenCanvas (GPU) |
-| **PDF Compress** | PDF | PDF.js 4.4 + pdf-lib 1.17 — structural image resampling |
+| **Images** | JPEG · PNG · WebP · AVIF · HEIC · BMP | OffscreenCanvas (GPU) |
+| **PDF Compress** | PDF | PDF.js + pdf-lib (structural image resampling) |
 | **Video** | MP4 · WebM · MOV · AVI · MKV | FFmpeg.wasm → WebCodecs → MediaRecorder |
 | **Audio** | MP3 · AAC · OGG · Opus · FLAC · WAV | FFmpeg.wasm |
-| **GIF** | GIF → optimised GIF or WebM VP9 | FFmpeg.wasm (two-pass palettegen) |
+| **GIF** | GIF → GIF or WebM VP9 | FFmpeg.wasm (two-pass palettegen) |
 | **SVG** | SVG | Pure TypeScript, zero dependencies |
-| **PDF OCR** | Scanned PDF → searchable PDF + TXT | Tesseract.js 5 + PaddleOCR PP-OCRv3 |
+| **PDF OCR** | Scanned PDF → searchable PDF + TXT | PaddleOCR-VL 1.5 (primary) + Tesseract.js 5 |
 
 ---
 
 ## OCR Engines
 
-CompressZ ships two independent OCR engines selectable per job, plus an **Auto** mode that analyses each document and picks the best one automatically.
+### PaddleOCR-VL 1.5 — Primary Engine ⭐
 
-### Tesseract.js 5
+| Attribute | Detail |
+|-----------|--------|
+| Technology | PP-OCRv3 detection + direction classification + CRNN recognition via WebGL/ONNX |
+| Model size | ~25 MB (cached after first use) |
+| Best for | **Handwriting** (print and cursive), tables, forms, multi-column layouts, rotated text, CJK scripts, low-quality and noisy scans |
+| Strengths | Document structure understanding, complex layout handling, Chinese/Japanese/Korean, robust to image quality |
+| Limitations | Heavier first load, requires WebGL, slower on large batches |
+| Rating | Handwriting ●●●●● · Tables ●●●●● · Print ●●●●● · Low quality ●●●●● · Speed ●●●○○ |
 
-- **Technology:** LSTM neural model compiled to SIMD-accelerated WebAssembly
-- **Model size:** ~10 MB (cached by browser after first use)
-- **Languages:** 100+ including all Latin-script languages, Cyrillic, Arabic, Hebrew, Thai, Vietnamese
-- **Best for:** Clean scans, typeset documents, single-column layouts, 300 DPI+ images
-- **Accuracy:** >95% on clean 300 DPI scans of typeset text
-- **Runs offline:** Yes, fully after first load
+### Tesseract.js 5 — Secondary Engine
 
-### PaddleOCR PP-OCRv3
-
-- **Technology:** Baidu's three-stage pipeline running via WebGL / paddle.js
-  1. **PP-OCRv3 text detector** — finds text regions at any angle
-  2. **MobileNetV3 direction classifier** — corrects rotated/flipped text
-  3. **CRNN recogniser** — character recognition (separate EN and CJK models)
-- **Model size:** ~25 MB (cached by browser after first use)
-- **Languages:** English, Chinese (Simplified + Traditional), Japanese, Korean, Arabic, Hindi
-- **Best for:** Multi-column layouts, tables, forms, rotated/skewed text, handwriting, CJK scripts, low-quality scans
-- **Accuracy:** State-of-the-art on complex document layouts
-- **Runs offline:** Yes, fully after first load
+| Attribute | Detail |
+|-----------|--------|
+| Technology | LSTM neural model compiled to SIMD-accelerated WebAssembly |
+| Model size | ~10 MB per language (cached after first use) |
+| Best for | Clean typeset documents, batch processing, rare languages |
+| Strengths | 100+ languages (Arabic, Hebrew, Thai, Vietnamese and more), fast on clean high-DPI scans, predictable accuracy, fully offline |
+| Limitations | Poor on handwriting, struggles with complex layouts, needs high DPI |
+| Rating | Handwriting ●●○○○ · Tables ●●●○○ · Print ●●●●● · Low quality ●●○○○ · Speed ●●●●● |
 
 ### Auto Mode
 
-Auto mode renders the first page at a small resolution and measures its dark-pixel density as a proxy for layout complexity. Documents with sparse text (simple layout) are routed to Tesseract; dense/complex documents are routed to PaddleOCR. Language selection also influences the choice — CJK/Arabic/Hindi always uses PaddleOCR.
+Auto selects PaddleOCR-VL 1.5 by default. Language/script is auto-detected from the first page render using Tesseract's OSD (Orientation & Script Detection, PSM=0), mapping detected scripts to the correct language model.
 
-### Output
+### When to use which
 
-- **Searchable PDF** — invisible text layer embedded over the original pages (or a new image-based PDF)
-- **Plain text file** (optional) — full extracted text with page separators
-- Words below 30% confidence are excluded from the text layer to reduce noise
+| Document type | Recommended engine |
+|--------------|-------------------|
+| Handwritten notes, letters | PaddleOCR-VL 1.5 |
+| Printed books, reports | Either (Tesseract slightly faster) |
+| Tables, invoices, forms | PaddleOCR-VL 1.5 |
+| CJK documents | PaddleOCR-VL 1.5 |
+| Arabic / Hebrew / RTL | Tesseract.js (dedicated models) |
+| Rare languages | Tesseract.js (100+ lang coverage) |
+| Low-quality / noisy scans | PaddleOCR-VL 1.5 |
+| Batch processing (speed) | Tesseract.js |
 
 ---
 
 ## PDF Compression
 
-Two strategies run in sequence:
+Two strategies, selected automatically:
 
-**Strategy A — Structural** (default for Low and Recommended presets)  
-Iterates the PDF's XObject resource dictionary, finds embedded images, decodes them, downscales to the target DPI via OffscreenCanvas, re-encodes as JPEG, and splices back in-place. Text, fonts, and vector graphics are **never touched** — no rasterisation artifacts.
+**Strategy A — Structural** (Low and Recommended presets)  
+Walks the PDF XObject resource dictionary, finds embedded images, downscales to target DPI via OffscreenCanvas, re-encodes as JPEG in-place. Text and vectors untouched.
 
-**Strategy B — Canvas re-render** (Extreme preset, or fallback for encrypted/corrupt PDFs)  
-PDF.js renders each page to an OffscreenCanvas with `colorSpace: 'srgb'` and `intent: 'print'`, then pdf-lib embeds the resulting JPEG. Fixes all stitching/color-line artifacts that plagued earlier canvas-based approaches.
+**Strategy B — Canvas render** (Extreme preset + fallback for encrypted PDFs)  
+PDF.js renders each page to OffscreenCanvas with `colorSpace: 'srgb'` and `intent: 'print'`, embedded via pdf-lib.
 
-| Preset | DPI | JPEG Quality | Strategy |
+| Preset | DPI | JPEG quality | Strategy |
 |--------|-----|-------------|----------|
 | Low | 220 | 0.85 | Structural |
 | Recommended | 150 | 0.72 | Structural |
-| Extreme | 96 | 0.45 | Canvas (flattens everything) |
+| Extreme | 96 | 0.45 | Canvas |
+
+**Target size mode** — enter a specific MB or KB value; CompressZ binary-searches JPEG quality over 10 iterations to hit it.
 
 ---
 
@@ -99,41 +105,39 @@ PDF.js renders each page to an OffscreenCanvas with `colorSpace: 'srgb'` and `in
 compressz/
 ├── public/
 │   ├── _headers          # COOP/COEP → SharedArrayBuffer (FFmpeg MT)
-│   ├── _redirects        # SPA fallback (/* → /index.html)
-│   ├── favicon.svg
+│   ├── _redirects        # SPA fallback
+│   ├── favicon.svg / .png
 │   ├── robots.txt
 │   └── sitemap.xml
 ├── src/
 │   ├── lib/
-│   │   ├── types.ts          # Shared types, helpers
-│   │   ├── compress.ts       # Central dispatcher
-│   │   ├── compressImage.ts  # OffscreenCanvas + binary search
-│   │   ├── compressPdf.ts    # Structural + canvas strategies
-│   │   ├── compressVideo.ts  # FFmpeg.wasm → WebCodecs → MediaRecorder
-│   │   ├── compressAudio.ts  # FFmpeg.wasm (6 formats)
-│   │   ├── compressGif.ts    # FFmpeg palettegen + paletteuse
-│   │   ├── optimizeSvg.ts    # Pure TS SVG optimiser
-│   │   └── ffmpeg.ts         # FFmpeg singleton loader
+│   │   ├── types.ts
+│   │   ├── compress.ts
+│   │   ├── compressImage.ts
+│   │   ├── compressPdf.ts    # Two-strategy PDF compression
+│   │   ├── compressVideo.ts  # FFmpeg → WebCodecs → MediaRecorder
+│   │   ├── compressAudio.ts
+│   │   ├── compressGif.ts
+│   │   ├── optimizeSvg.ts
+│   │   └── ffmpeg.ts
 │   ├── pages/
 │   │   ├── images.ts
 │   │   ├── pdf.ts
 │   │   ├── video.ts
 │   │   ├── audio.ts
 │   │   ├── gif.ts
-│   │   └── ocr.ts            # Tesseract.js + PaddleOCR + searchable PDF builder
-│   ├── components.ts     # DropZone + FileCard DOM builders
-│   ├── router.ts         # History API SPA router
-│   ├── toast.ts          # Toast notifications
-│   ├── style.css         # Design tokens + all component styles
-│   └── main.ts           # Entry — wires router, theme, nav
-├── index.html            # App shell + all <template> page content
-├── wrangler.json         # Cloudflare Pages config
-├── vite.config.ts        # Vite 6 — esnext, COOP/COEP dev headers
+│   │   └── ocr.ts            # PaddleOCR-VL 1.5 + Tesseract.js 5
+│   ├── components.ts
+│   ├── router.ts
+│   ├── toast.ts
+│   ├── style.css
+│   └── main.ts
+├── index.html                # App shell + page templates
+├── vite.config.ts            # Vite 6, esnext, COOP/COEP dev headers
 ├── tsconfig.json
-└── package.json
+├── package.json
+└── .github/dependabot.yml    # Weekly grouped updates, major versions pinned
 ```
-
-No framework. No Svelte, React, or Vue. Pure TypeScript DOM manipulation with typed components throughout.
 
 ---
 
@@ -142,56 +146,25 @@ No framework. No Svelte, React, or Vue. Pure TypeScript DOM manipulation with ty
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-```
-
-The Vite dev server sets `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` automatically, enabling SharedArrayBuffer for multithreaded FFmpeg.
-
-```bash
-npm run build      # production build → dist/
-npm run preview    # serve the build locally
-npm run typecheck  # TypeScript check (no emit)
+npm run build      # → dist/
+npm run preview    # serve dist/ locally
+npm run typecheck  # TypeScript check
 ```
 
 ---
 
-## Deployment
+## Cloudflare Pages Deployment
 
-### Cloudflare Pages (recommended)
+**Dashboard settings** (no other config needed — `wrangler.json` is intentionally absent):
 
-1. Push this repo to GitHub
-2. **Cloudflare Dashboard → Workers & Pages → Create → Pages → Connect to Git**
-3. Select your repo, then set:
+| Setting | Value |
+|---------|-------|
+| Framework preset | Vite |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Environment variable | `NODE_VERSION` = `20` |
 
-   | Setting | Value |
-   |---------|-------|
-   | Framework preset | Vite |
-   | Build command | `npm run build` |
-   | Build output directory | `dist` |
-   | Environment variable | `NODE_VERSION` = `20` |
-
-4. Click **Save and Deploy**
-
-The `wrangler.json` and `public/_headers` are picked up automatically. Every subsequent push to `main` redeploys.
-
-### GitHub Actions (auto-deploy)
-
-Add these secrets to your GitHub repo (**Settings → Secrets → Actions**):
-
-| Secret | Where to find it |
-|--------|-----------------|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare Dashboard → My Profile → API Tokens → Create Token (Edit Cloudflare Workers template) |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Dashboard → right sidebar |
-
-`.github/workflows/deploy.yml` handles the rest on every push to `main`.
-
-### Wrangler CLI
-
-```bash
-npm install -g wrangler
-wrangler login
-npm run build
-wrangler pages deploy dist --project-name=compressz
-```
+The `public/_headers` file sets COOP/COEP automatically, enabling SharedArrayBuffer for multithreaded FFmpeg.
 
 ---
 
@@ -199,32 +172,21 @@ wrangler pages deploy dist --project-name=compressz
 
 | Feature | Chrome | Firefox | Safari | Edge |
 |---------|--------|---------|--------|------|
-| Image (JPEG/PNG/WebP) | 80+ | 80+ | 14+ | 80+ |
+| Image (JPEG/WebP) | 80+ | 80+ | 14+ | 80+ |
 | Image (AVIF) | 85+ | 93+ | 16.1+ | 85+ |
 | PDF compress | 80+ | 80+ | 14+ | 80+ |
-| FFmpeg.wasm (video/audio/GIF) | 91+ | 91+ | 15.2+* | 91+ |
-| FFmpeg multithreaded (MT) | 91+ | 91+ | 15.4+ | 91+ |
-| WebCodecs (GPU video) | 94+ | — | 16.4+ | 94+ |
-| OCR (Tesseract.js) | 91+ | 91+ | 15.2+ | 91+ |
-| OCR (PaddleOCR/WebGL) | 91+ | 91+ | 15.2+ | 91+ |
-
-*Safari single-threaded only without COOP/COEP, which Cloudflare Pages sets via `_headers`.
+| FFmpeg.wasm | 91+ | 91+ | 15.2+ | 91+ |
+| FFmpeg MT (SharedArrayBuffer) | 91+ | 91+ | 15.4+ | 91+ |
+| WebCodecs GPU video | 94+ | — | 16.4+ | 94+ |
+| PaddleOCR (WebGL) | 91+ | 91+ | 15.2+ | 91+ |
+| Tesseract.js (WASM) | 91+ | 91+ | 15.2+ | 91+ |
 
 ---
 
-## COOP/COEP Headers
+## Privacy
 
-`public/_headers` sets on every Cloudflare Pages response:
-
-```
-Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: require-corp
-```
-
-These headers unlock `SharedArrayBuffer`, which FFmpeg.wasm uses for multithreading (~2× encode speed). Without them, FFmpeg falls back to single-threaded mode and still works correctly.
+CompressZ has no backend. Files never leave your browser. See [Privacy Policy](https://compressz.pages.dev/privacy) for full details.
 
 ---
 
-## License
-
-MIT — see [LICENSE](LICENSE)
+Made with ❤️ by ADJ and team · MIT License
