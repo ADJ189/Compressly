@@ -288,6 +288,9 @@ async function runPaddle(
     let items: any[] = [];
     try { items = (await ocr.recognize(canvas)) ?? []; } catch { /**/ }
 
+    // Free GPU/VRAM backing store immediately — important for large PDFs
+    canvas.width = 0; canvas.height = 0;
+
     const words: WordBox[] = [];
     let text = '', confSum = 0;
 

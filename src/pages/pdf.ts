@@ -8,7 +8,6 @@ export function mountPdf(root: HTMLElement) {
   let files: FileEntry[]  = [];
   let level: PdfLevel     = 'recommended';
   // Target size: 0 = auto (preset-driven), >0 = compress to this exact size
-  let targetSize   = 0;       // in KB internally
   let targetUnit: 'MB' | 'KB' = 'MB';
   let targetInput  = '';      // raw user input string
 
