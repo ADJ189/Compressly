@@ -18,8 +18,14 @@ updates:
       prefix: "chore(deps)"
       include: "scope"
     ignore:
-      # Pin FFmpeg.wasm — upgrades require manual testing
+      # Pin FFmpeg.wasm — upgrades require manual testing of all video/audio/GIF codecs
       - dependency-name: "@ffmpeg/*"
+        update-types: ["version-update:semver-major"]
+      # Pin Vite major versions — breaking changes require full build verification
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      # Pin TypeScript major versions — may introduce strict breaking changes
+      - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
     groups:
       vite-ecosystem:
@@ -40,9 +46,15 @@ updates:
       time: "09:00"
       timezone: "UTC"
     open-pull-requests-limit: 5
+    reviewers:
+      - "ADJ189"
     labels:
       - "dependencies"
       - "github-actions"
       - "automated"
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"
+
     commit-message:
       prefix: "ci(deps)"
