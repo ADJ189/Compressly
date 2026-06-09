@@ -115,3 +115,16 @@ init();
 
 // Export navigate for inline onclick use in templates
 (window as any).navigate = navigate;
+
+// ── Unload guard ──────────────────────────────────────────────
+// Page modules call registerBusyCheck(() => boolean) when they mount.
+// The handler is replaced on each navigation so stale checks don't linger.
+let _busyCheck: (() => boolean) | null = null;
+export function registerBusyCheck(fn: () => boolean) { _busyCheck = fn; }
+window.addEventListener('beforeunload', e => {
+  if (_busyCheck?.()) {
+    e.preventDefault();
+    // Most modern browsers show a generic message — the custom string is ignored.
+    e.returnValue = 'Compression in progress — leaving will discard your work.';
+  }
+});

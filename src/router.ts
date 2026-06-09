@@ -1,17 +1,28 @@
 type Handler = () => void;
 const handlers = new Map<string, Handler>();
 
+// Derive the deployment base once (e.g. "/" on root, "/compressz/" on a sub-path).
+// Vite injects BASE_URL at build time via import.meta.env; the declaration below
+// satisfies the TypeScript compiler without needing a separate vite-env.d.ts.
+declare const __VITE_BASE__: string | undefined;
+const BASE: string = (import.meta as any).env?.BASE_URL ?? '/';
+const BASE_NORM = BASE.endsWith('/') ? BASE : BASE + '/';
+
 export function on(route: string, fn: Handler) {
   handlers.set(route, fn);
 }
 
 export function navigate(route: string) {
-  history.pushState({}, '', '/' + route);
-  dispatch(route);
+  history.pushState({}, '', BASE_NORM + route);
+  dispatch(BASE_NORM + route);
 }
 
 function dispatch(path: string) {
-  const route = path.replace(/^\//, '').replace(/\/$/, '');
+  // Strip the base prefix, then normalise leading/trailing slashes.
+  const stripped = path.startsWith(BASE_NORM)
+    ? path.slice(BASE_NORM.length)
+    : path.replace(/^\//, '');
+  const route = stripped.replace(/\/$/, '');
   const handler = handlers.get(route) ?? handlers.get('*');
   handler?.();
 }
