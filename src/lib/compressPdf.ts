@@ -140,7 +140,15 @@ async function structuralCompress(
       xObj.dict.delete(PDFName.of('DecodeParms'));
       xObj.dict.delete(PDFName.of('Mask'));
       xObj.dict.delete(PDFName.of('SMask'));
-      pdfDoc.context.assign(xObj.ref ?? key, new PDFRawStream(xObj.dict, reencoded));
+
+      // If the XObject already has a stable ref, update it in-place.
+      // Otherwise register a new object and point the XObject dict entry at it.
+      if (xObj.ref) {
+        pdfDoc.context.assign(xObj.ref, new PDFRawStream(xObj.dict, reencoded));
+      } else {
+        const newRef = pdfDoc.context.register(new PDFRawStream(xObj.dict, reencoded));
+        xObjects.set(key, newRef);
+      }
     }
 
     onProgress?.(6 + Math.floor(((p + 1) / total) * 82));
@@ -150,7 +158,7 @@ async function structuralCompress(
 
   onProgress?.(92);
   const bytes = await pdfDoc.save({ useObjectStreams: true, addDefaultPage: false });
-  const blob  = new Blob([bytes], { type: 'application/pdf' });
+  const blob  = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
   onProgress?.(100);
 
   return {
@@ -166,16 +174,24 @@ async function structuralCompress(
 async function decodeXObjectToBlob(xObj: any, w: number, h: number): Promise<Blob> {
   const rawBytes: Uint8Array = xObj.contents ?? xObj.getContents?.() ?? new Uint8Array(0);
   if (!rawBytes.length) throw new Error('empty stream');
+  // Ensure concrete ArrayBuffer — pdf-lib can return views backed by SharedArrayBuffer
+  // which Blob() rejects in strict TS lib. Slice copies into a plain ArrayBuffer.
+  const safeBytes = new Uint8Array(
+    rawBytes.buffer instanceof ArrayBuffer
+      ? rawBytes.buffer.slice(rawBytes.byteOffset, rawBytes.byteOffset + rawBytes.byteLength)
+      : new Uint8Array(rawBytes).buffer
+  );
 
   // JPEG: magic bytes FF D8
   if (rawBytes[0] === 0xFF && rawBytes[1] === 0xD8) {
-    return new Blob([rawBytes], { type: 'image/jpeg' });
+    return new Blob([safeBytes], { type: 'image/jpeg' });
   }
 
   // Try wrapping as a generic blob and decoding (handles PNG, etc.)
   try {
-    const b = new Blob([rawBytes]);
-    await createImageBitmap(b);
+    const b = new Blob([safeBytes]);
+    const bmp = await createImageBitmap(b);
+    bmp.close(); // just testing decodability; close immediately
     return b;
   } catch { /**/ }
 
@@ -299,7 +315,7 @@ async function canvasRender(
   if (stripMeta) stripMetadata(newPdf);
 
   const bytes = await (newPdf as any).save({ useObjectStreams: true, addDefaultPage: false });
-  const blob  = new Blob([bytes], { type: 'application/pdf' });
+  const blob  = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
 
   if (blob.size < 256) throw new Error(`Output too small (${blob.size}b) — PDF may be corrupt`);
 

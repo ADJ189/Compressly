@@ -45,16 +45,7 @@ export async function optimizeSvg(
   } while (svg !== prev);
 
   // Remove hidden elements
-  do {
-    prev = svg;
-    svg = svg.replace(/<[^>]+(?:display\s*:\s*none|visibility\s*:\s*hidden)[^>]*(\/>|[\s\S]*?<\/[a-z]+>)/gi, '');
-  } while (svg !== prev);
-
-  // Re-strip embedded scripts in case hidden-element removal exposes new tags
-  do {
-    prev = svg;
-    svg  = svg.replace(/<script\b[^>]*(?:\/>|>[\s\S]*?<\/script(?:\s[^>]*)?>)/gi, '');
-  } while (svg !== prev);
+  svg = svg.replace(/<[^>]+(?:display\s*:\s*none|visibility\s*:\s*hidden)[^>]*(\/>|[\s\S]*?<\/[a-z]+>)/gi, '');
 
   // Collapse whitespace
   svg = svg.replace(/>\s{2,}</g, '><');

@@ -6,14 +6,14 @@ export async function compressVideo(
   options: CompressOptions,
   onProgress?: (pct: number) => void,
 ): Promise<CompressResult> {
+  // Primary: FFmpeg.wasm — best quality, all codecs, proper MP4 container.
   try { return await videoViaFFmpeg(file, options, onProgress); }
-  catch (e) { console.warn('[video] FFmpeg failed, trying WebCodecs:', e); }
+  catch (e) { console.warn('[video] FFmpeg failed, falling back to MediaRecorder:', e); }
 
-  if (typeof VideoEncoder !== 'undefined') {
-    try { return await videoViaWebCodecs(file, options, onProgress); }
-    catch (e) { console.warn('[video] WebCodecs failed, falling back to MediaRecorder:', e); }
-  }
-
+  // Fallback: MediaRecorder — browser-native, always produces a valid container.
+  // The WebCodecs path has been removed: it encoded raw H.264 NAL units with no
+  // container muxer, producing blobs that no player can open. Re-enable it only
+  // after integrating mp4box.js or webm-muxer for proper muxing.
   return videoViaMediaRecorder(file, options, onProgress);
 }
 
@@ -94,113 +94,11 @@ async function videoViaFFmpeg(
   };
 }
 
-// ── WebCodecs ─────────────────────────────────────────────────
-async function videoViaWebCodecs(
-  file: File,
-  opts: CompressOptions,
-  onProgress?: (pct: number) => void,
-): Promise<CompressResult> {
-  const meta = await getVideoMeta(file);
-  const { width: w, height: h, duration } = meta;
-  const bitrate = opts.targetSizeKB
-    ? Math.round((opts.targetSizeKB * 1024 * 8) / Math.max(duration, 1))
-    : (opts.videoBitrate ?? 2_000_000);
-
-  const codec = 'avc1.640028';
-  let hw: VideoHardwareAcceleration = 'prefer-software';
-  try {
-    const s = await VideoEncoder.isConfigSupported({
-      codec, width: w, height: h, bitrate, framerate: 30,
-      hardwareAcceleration: 'prefer-hardware',
-    });
-    if (s.supported) hw = 'prefer-hardware';
-  } catch { /**/ }
-
-  const chunks: EncodedVideoChunk[] = [];
-  const enc = new VideoEncoder({
-    output: c => chunks.push(c),
-    error:  e => { throw new Error(e.message); },
-  });
-  enc.configure({ codec, width: w, height: h, bitrate, framerate: 30,
-    hardwareAcceleration: hw, latencyMode: 'quality' });
-
-  const url = URL.createObjectURL(file);
-  // FIX 2: don't mute — we need audio from the video element
-  const vid = Object.assign(document.createElement('video'),
-    { src: url, muted: false, playsInline: true, volume: 0 });
-  await new Promise<void>((r, rej) => {
-    vid.onloadedmetadata = () => r();
-    vid.onerror = () => rej(new Error('Video load failed'));
-  });
-
-  const fps    = opts.fps ?? 30;
-  const fc     = Math.ceil(duration * fps);
-  const canvas = document.createElement('canvas');
-  canvas.width = w; canvas.height = h;
-  const ctx    = canvas.getContext('2d')!;
-
-  // FIX 2: capture audio track from the video element via Web Audio API
-  let audioChunks: Blob[] = [];
-  let audioRec: MediaRecorder | null = null;
-  try {
-    const audioCtx    = new AudioContext();
-    const src         = audioCtx.createMediaElementSource(vid);
-    const dest        = audioCtx.createMediaStreamDestination();
-    src.connect(dest);
-    // Also connect to speakers so volume:0 vid stays silent but audio flows
-    src.connect(audioCtx.destination);
-    audioRec = new MediaRecorder(dest.stream);
-    audioRec.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-    audioRec.start(100);
-  } catch { audioRec = null; }
-
-  for (let i = 0; i < fc; i++) {
-    const t = i / fps;
-    if (t >= duration) break;
-
-    // FIX 4: skip seek if already at the right time (avoids deadlock on frame 0)
-    await new Promise<void>(r => {
-      if (Math.abs(vid.currentTime - t) < 0.001) { r(); return; }
-      vid.onseeked = () => r();
-      vid.currentTime = t;
-    });
-
-    ctx.drawImage(vid, 0, 0, w, h);
-    const frame = new VideoFrame(canvas, { timestamp: Math.round(t * 1_000_000) });
-    enc.encode(frame, { keyFrame: i % 60 === 0 });
-    frame.close();
-    onProgress?.(5 + Math.round((i / fc) * 88));
-  }
-
-  await enc.flush();
-  enc.close();
-  audioRec?.stop();
-  URL.revokeObjectURL(url);
-
-  const total = chunks.reduce((a, c) => a + c.byteLength, 0);
-  const buf   = new Uint8Array(total);
-  let pos     = 0;
-  for (const c of chunks) {
-    const tmp = new Uint8Array(c.byteLength);
-    c.copyTo(tmp); buf.set(tmp, pos); pos += c.byteLength;
-  }
-
-  // WebCodecs doesn't produce a proper container — output is raw NAL units.
-  // We wrap as mp4 best-effort; audio is best-effort via separate blob.
-  const blob = new Blob([buf], { type: 'video/mp4' });
-  onProgress?.(100);
-
-  return {
-    blob,
-    originalSize:     file.size,
-    compressedSize:   blob.size,
-    compressionRatio: file.size / blob.size,
-    format:           `video/mp4 · WebCodecs (${hw === 'prefer-hardware' ? 'GPU' : 'SW'})`,
-    width: w, height: h, duration,
-  };
-}
-
 // ── MediaRecorder ─────────────────────────────────────────────
+// NOTE: A WebCodecs path was removed because it concatenated raw H.264 NAL
+// units without a container muxer, producing blobs no player can open.
+// Re-introduce it only after adding mp4box.js or webm-muxer for proper
+// muxing. The FFmpeg + MediaRecorder chain below is reliable on all browsers.
 async function videoViaMediaRecorder(
   file: File,
   opts: CompressOptions,

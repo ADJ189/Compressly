@@ -18,7 +18,7 @@ export async function compressImage(
   const maxH   = options.maxHeight ?? 16384;
 
   let bitmap: ImageBitmap;
-  try { bitmap = await createImageBitmap(file, { resizeQuality: 'high' }); }
+  try { bitmap = await createImageBitmap(file); }
   catch { bitmap = await loadViaImg(file); }
   onProgress?.(18);
 
@@ -70,7 +70,7 @@ async function binarySearch(
 ): Promise<Blob> {
   if (format === 'image/png') { onProgress?.(90); return encode(canvas, format, 1); }
   let lo = 0.01, hi = 0.99, best: Blob | null = null;
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 10; i++) {
     const mid = (lo + hi) / 2;
     const b   = await encode(canvas, format, mid);
     onProgress?.(32 + Math.round((i / 14) * 60));

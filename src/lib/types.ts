@@ -79,6 +79,25 @@ export function detectFileType(file: File): FileType {
 }
 
 export function getOutputExtension(result: CompressResult): string {
+  // Primary: derive from the actual blob MIME type — always authoritative.
+  const mime = result.blob.type.toLowerCase();
+  if (mime === 'image/webp')       return 'webp';
+  if (mime === 'image/jpeg')       return 'jpg';
+  if (mime === 'image/png')        return 'png';
+  if (mime === 'image/avif')       return 'avif';
+  if (mime === 'image/gif')        return 'gif';
+  if (mime === 'image/svg+xml')    return 'svg';
+  if (mime === 'application/pdf')  return 'pdf';
+  if (mime === 'video/webm')       return 'webm';
+  if (mime === 'video/mp4')        return 'mp4';
+  if (mime === 'audio/mpeg')       return 'mp3';
+  if (mime === 'audio/mp4')        return 'm4a';  // AAC in MP4 container
+  if (mime === 'audio/opus')       return 'opus';
+  if (mime === 'audio/flac')       return 'flac';
+  if (mime === 'audio/wav' || mime === 'audio/x-wav') return 'wav';
+  if (mime === 'audio/ogg')        return 'ogg';
+
+  // Fallback: parse the human-readable format string (lower-cased).
   const fmt = result.format.toLowerCase();
   if (fmt.includes('webp'))  return 'webp';
   if (fmt.includes('jpeg') || fmt.includes('jpg')) return 'jpg';
