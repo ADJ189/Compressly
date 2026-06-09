@@ -208,20 +208,28 @@ async function renderPages(
     const h    = Math.floor(vp.height);
     let blob: Blob;
 
-    if (typeof OffscreenCanvas !== 'undefined') {
-      const osc = new OffscreenCanvas(w, h);
-      const ctx = osc.getContext('2d', { alpha:false, colorSpace:'srgb' }) as any;
-      ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
-      await page.render({ canvasContext:ctx, viewport:vp, intent:'print' }).promise;
+    try {
+      if (typeof OffscreenCanvas !== 'undefined') {
+        const osc = new OffscreenCanvas(w, h);
+        const ctx = osc.getContext('2d', { alpha:false, colorSpace:'srgb' }) as any;
+        ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
+        await page.render({ canvasContext:ctx, viewport:vp, intent:'print' }).promise;
+        blob = await osc.convertToBlob({ type:'image/png' });
+      } else {
+        const c = document.createElement('canvas');
+        c.width=w; c.height=h;
+        const ctx = c.getContext('2d',{alpha:false})!;
+        ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
+        await page.render({ canvasContext:ctx, viewport:vp, intent:'print' }).promise;
+        blob = await new Promise<Blob>((r,j)=>c.toBlob(b=>b?r(b):j(new Error('toBlob null')),'image/png'));
+        c.width=0; c.height=0;
+      }
+    } catch (err) {
+      console.warn(`[ocr] renderPages: page ${i} failed, using blank:`, err);
+      // Return a 1×1 white PNG as a blank placeholder so OCR can continue.
+      const osc = new OffscreenCanvas(w || 1, h || 1);
+      (osc.getContext('2d') as any)?.clearRect(0, 0, w, h);
       blob = await osc.convertToBlob({ type:'image/png' });
-    } else {
-      const c = document.createElement('canvas');
-      c.width=w; c.height=h;
-      const ctx = c.getContext('2d',{alpha:false})!;
-      ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
-      await page.render({ canvasContext:ctx, viewport:vp, intent:'print' }).promise;
-      blob = await new Promise<Blob>((r,j)=>c.toBlob(b=>b?r(b):j(new Error('toBlob null')),'image/png'));
-      c.width=0; c.height=0;
     }
     out.push({ blob, width:w, height:h });
     page.cleanup();
@@ -433,7 +441,7 @@ async function runOcr(
   }
 
   const useEngine = options.engine === 'auto'
-    ? 'paddle'
+    ? 'tesseract'
     : options.engine;
 
   onProgress?.(28, `Starting ${useEngine === 'paddle' ? 'PaddleOCR-VL 1.5' : 'Tesseract.js 5'}…`);
@@ -482,7 +490,7 @@ function stars(n: number): string {
 // ═══════════════════════════════════════════════════════════════
 export function mountOcr(root: HTMLElement): void {
   let files:      OcrEntry[]  = [];
-  let engine:     OcrEngine   = 'paddle';   // PaddleOCR-VL 1.5 is PRIMARY
+  let engine:     OcrEngine   = 'tesseract';  // PaddleOCR integration is experimental; use Tesseract as stable default
   let language:   OcrLanguage = 'auto';
   let renderDpi   = 250;
   let overlayMode = true;
@@ -675,10 +683,10 @@ export function mountOcr(root: HTMLElement): void {
         ${engine==='tesseract' ? `
         <div class="s-field">
           <span class="s-label">OCR Model</span>
-          <div class="seg">
-            <button class="${oem===1?'on':''}" id="oem-1">LSTM</button>
-            <button class="${oem===3?'on':''}" id="oem-3">Auto</button>
-            <button class="${oem===0?'on':''}" id="oem-0">Legacy</button>
+          <div class="seg" role="group" aria-label="OCR model">
+            <button class="${oem===1?'on':''}" aria-pressed="${oem===1?'true':'false'}" id="oem-1">LSTM</button>
+            <button class="${oem===3?'on':''}" aria-pressed="${oem===3?'true':'false'}" id="oem-3">Auto</button>
+            <button class="${oem===0?'on':''}" aria-pressed="${oem===0?'true':'false'}" id="oem-0">Legacy</button>
           </div>
           <div style="font-size:.7rem;color:var(--text-4);margin-top:.25rem">
             ${oem===1?'Neural LSTM — most accurate':oem===0?'Pattern-matching — faster':'Auto selects per page'}
@@ -707,9 +715,9 @@ export function mountOcr(root: HTMLElement): void {
 
         <div class="s-field">
           <span class="s-label">Output mode</span>
-          <div class="seg">
-            <button class="${overlayMode?'on':''}" id="mode-ov">Overlay original</button>
-            <button class="${!overlayMode?'on':''}" id="mode-new">New image PDF</button>
+          <div class="seg" role="group" aria-label="Output mode">
+            <button class="${overlayMode?'on':''}" aria-pressed="${overlayMode?'true':'false'}" id="mode-ov">Overlay original</button>
+            <button class="${!overlayMode?'on':''}" aria-pressed="${!overlayMode?'true':'false'}" id="mode-new">New image PDF</button>
           </div>
           <div style="font-size:.7rem;color:var(--text-4);margin-top:.25rem">
             ${overlayMode?'Adds invisible text on top of original pages':'New PDF from page images + text layer'}
@@ -718,9 +726,9 @@ export function mountOcr(root: HTMLElement): void {
 
         <div class="s-field">
           <span class="s-label">Text export</span>
-          <div class="seg">
-            <button class="${extractText?'on':''}" id="txt-y">PDF + TXT</button>
-            <button class="${!extractText?'on':''}" id="txt-n">PDF only</button>
+          <div class="seg" role="group" aria-label="Text export">
+            <button class="${extractText?'on':''}" aria-pressed="${extractText?'true':'false'}" id="txt-y">PDF + TXT</button>
+            <button class="${!extractText?'on':''}" aria-pressed="${!extractText?'true':'false'}" id="txt-n">PDF only</button>
           </div>
         </div>
       </div>`;

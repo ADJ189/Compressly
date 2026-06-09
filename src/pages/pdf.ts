@@ -3,22 +3,20 @@ import type { FileEntry, CompressOptions, PdfLevel } from '../lib/types';
 import { compressPdf } from '../lib/compressPdf';
 import { createDropZone, renderFileCard, patchFileCard, renderBatchBar } from '../components';
 import { toast } from '../toast';
+import { pdfStore } from '../store';
 
 export function mountPdf(root: HTMLElement) {
-  let files: FileEntry[]  = [];
-  let level: PdfLevel     = 'recommended';
-  // Target size: 0 = auto (preset-driven), >0 = compress to this exact size
-  let targetUnit: 'MB' | 'KB' = 'MB';
-  let targetInput  = '';      // raw user input string
+  // ── State — persisted in pdfStore across navigations ────────
+  const s = pdfStore;
 
   function resolveTargetKB(): number {
-    const v = parseFloat(targetInput);
-    if (!targetInput || isNaN(v) || v <= 0) return 0;
-    return targetUnit === 'MB' ? Math.round(v * 1024) : Math.round(v);
+    const v = parseFloat(s.targetInput);
+    if (!s.targetInput || isNaN(v) || v <= 0) return 0;
+    return s.targetUnit === 'MB' ? Math.round(v * 1024) : Math.round(v);
   }
 
   function buildOptions(): CompressOptions {
-    const o: CompressOptions = { pdfCompressionLevel: level };
+    const o: CompressOptions = { pdfCompressionLevel: s.level };
     const kb = resolveTargetKB();
     if (kb > 0) o.targetSizeKB = kb;
     return o;
@@ -28,7 +26,7 @@ export function mountPdf(root: HTMLElement) {
     const valid = fs.filter(f =>
       f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
     if (!valid.length) { toast('No PDF files found', 'error'); return; }
-    files = [...files, ...valid.map(f => ({
+    s.files = [...s.files, ...valid.map(f => ({
       id: uid(), file: f, type: 'pdf' as const,
       status: 'idle' as const, progress: 0, options: buildOptions(),
     }))];
@@ -49,7 +47,7 @@ export function mountPdf(root: HTMLElement) {
       toast(entry.error!, 'error');
     }
     patchFileCard(entry, cbs);
-    renderBatchBar(batchEl, files, compressAll, downloadAll, clearAll);
+    renderBatchBar(batchEl, s.files, compressAll, downloadAll, clearAll);
   }
 
   function downloadEntry(entry: FileEntry) {
@@ -61,13 +59,13 @@ export function mountPdf(root: HTMLElement) {
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
   }
 
-  function compressAll() { files.forEach(f => { if (f.status === 'idle' || f.status === 'error') compressEntry(f); }); }
-  function downloadAll()  { files.filter(f => f.status === 'done').forEach(downloadEntry); }
-  function clearAll()     { files = []; render(); }
+  function compressAll() { s.files.forEach(f => { if (f.status === 'idle' || f.status === 'error') compressEntry(f); }); }
+  function downloadAll()  { s.files.filter(f => f.status === 'done').forEach(downloadEntry); }
+  function clearAll()     { s.files = []; render(); }
   const cbs = {
     onCompress: compressEntry,
     onDownload: downloadEntry,
-    onRemove:   (id: string) => { files = files.filter(f => f.id !== id); render(); },
+    onRemove:   (id: string) => { s.files = s.files.filter(f => f.id !== id); render(); },
   };
 
   let batchEl!: HTMLElement;
@@ -107,10 +105,10 @@ export function mountPdf(root: HTMLElement) {
               <input class="ti" type="number" id="ts-input"
                 placeholder="e.g. 2" min="0" step="any"
                 style="width:100px"
-                value="${targetInput}">
-              <div class="ts-unit-toggle">
-                <button class="${targetUnit==='MB'?'on':''}" id="ts-mb">MB</button>
-                <button class="${targetUnit==='KB'?'on':''}" id="ts-kb">KB</button>
+                value="${s.targetInput}">
+              <div class="ts-unit-toggle" role="group" aria-label="Size unit">
+                <button class="${s.targetUnit==='MB'?'on':''}" aria-pressed="${s.targetUnit==='MB'?'true':'false'}" id="ts-mb">MB</button>
+                <button class="${s.targetUnit==='KB'?'on':''}" aria-pressed="${s.targetUnit==='KB'?'true':'false'}" id="ts-kb">KB</button>
               </div>
               <span id="ts-warning" style="font-size:.72rem;color:var(--amber);display:none">
                 ⚠ Target may not be reachable for some PDFs
@@ -140,19 +138,23 @@ export function mountPdf(root: HTMLElement) {
 
   // Target size events
   root.querySelector('#ts-input')!.addEventListener('input', e => {
-    targetInput = (e.target as HTMLInputElement).value;
+    s.targetInput = (e.target as HTMLInputElement).value;
     updateTsDetail();
   });
   root.querySelector('#ts-mb')!.addEventListener('click', () => {
-    targetUnit = 'MB'; renderUnitToggle(); updateTsDetail();
+    s.targetUnit = 'MB'; renderUnitToggle(); updateTsDetail();
   });
   root.querySelector('#ts-kb')!.addEventListener('click', () => {
-    targetUnit = 'KB'; renderUnitToggle(); updateTsDetail();
+    s.targetUnit = 'KB'; renderUnitToggle(); updateTsDetail();
   });
 
   function renderUnitToggle() {
-    (root.querySelector('#ts-mb') as HTMLButtonElement).classList.toggle('on', targetUnit === 'MB');
-    (root.querySelector('#ts-kb') as HTMLButtonElement).classList.toggle('on', targetUnit === 'KB');
+    const mb = root.querySelector('#ts-mb') as HTMLButtonElement;
+    const kb = root.querySelector('#ts-kb') as HTMLButtonElement;
+    mb.classList.toggle('on', s.targetUnit === 'MB');
+    kb.classList.toggle('on', s.targetUnit === 'KB');
+    mb.setAttribute('aria-pressed', String(s.targetUnit === 'MB'));
+    kb.setAttribute('aria-pressed', String(s.targetUnit === 'KB'));
   }
 
   function updateTsDetail() {
@@ -166,7 +168,6 @@ export function mountPdf(root: HTMLElement) {
     }
     const mb = (kb / 1024).toFixed(2);
     detail.textContent = `Binary-searching quality to hit ≈ ${kb} KB (${mb} MB) per file.`;
-    // Warn if target seems very aggressive
     warning.style.display = kb < 50 ? 'inline' : 'none';
   }
 
@@ -181,9 +182,11 @@ export function mountPdf(root: HTMLElement) {
     container.innerHTML = '';
     PRESETS.forEach(p => {
       const el = document.createElement('div');
-      el.className = 'pdf-preset' + (level === p.id ? ' on' : '');
+      el.className = 'pdf-preset' + (s.level === p.id ? ' on' : '');
+      el.setAttribute('role', 'radio');
+      el.setAttribute('aria-checked', String(s.level === p.id));
       el.innerHTML = `<div class="pp-emoji">${p.emoji}</div><div class="pp-label">${p.label}</div><div class="pp-sub">${p.sub}</div>`;
-      el.addEventListener('click', () => { level = p.id; renderPresets(); });
+      el.addEventListener('click', () => { s.level = p.id; renderPresets(); });
       container.appendChild(el);
     });
   }
@@ -191,10 +194,10 @@ export function mountPdf(root: HTMLElement) {
   function render() {
     renderPresets();
     updateTsDetail();
-    (dzWrap as any).setHasFiles(files.length > 0);
-    renderBatchBar(batchEl, files, compressAll, downloadAll, clearAll);
+    (dzWrap as any).setHasFiles(s.files.length > 0);
+    renderBatchBar(batchEl, s.files, compressAll, downloadAll, clearAll);
     listEl.innerHTML = '';
-    files.forEach(f => listEl.appendChild(renderFileCard(f, cbs)));
+    s.files.forEach(f => listEl.appendChild(renderFileCard(f, cbs)));
   }
 
   render();

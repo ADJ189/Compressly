@@ -1,8 +1,10 @@
+import { registerBusyCheck } from '../main';
 import { uid } from '../lib/types';
 import type { FileEntry, CompressOptions, AudioFormat } from '../lib/types';
 import { compressAudio } from '../lib/compressAudio';
 import { createDropZone, renderFileCard, patchFileCard, renderBatchBar } from '../components';
 import { toast } from '../toast';
+import { audioStore } from '../store';
 
 const BITRATE_OPTS: Record<AudioFormat, number[]> = {
   mp3:  [64, 96, 128, 192, 256, 320],
@@ -14,18 +16,15 @@ const BITRATE_OPTS: Record<AudioFormat, number[]> = {
 };
 
 export function mountAudio(root: HTMLElement) {
-  let files: FileEntry[] = [];
-  let fmt: AudioFormat = 'mp3';
-  let bitrate = 192;
-  let sampleRate = 0;
-  let stripMeta = true;
+  // ── State — persisted in audioStore across navigations ──────
+  const s = audioStore;
 
   const isLossless = (f: AudioFormat) => f === 'flac' || f === 'wav';
 
   function buildOptions(): CompressOptions {
-    const o: CompressOptions = { audioFormat: fmt, stripMetadata: stripMeta };
-    if (!isLossless(fmt)) o.audioBitrate = bitrate;
-    if (sampleRate > 0)   o.audioSampleRate = sampleRate;
+    const o: CompressOptions = { audioFormat: s.fmt, stripMetadata: s.stripMeta };
+    if (!isLossless(s.fmt)) o.audioBitrate = s.bitrate;
+    if (s.sampleRate > 0)   o.audioSampleRate = s.sampleRate;
     return o;
   }
 
@@ -34,7 +33,7 @@ export function mountAudio(root: HTMLElement) {
       f.type.startsWith('audio/') || f.type.startsWith('video/') ||
       /\.(mp3|aac|ogg|opus|flac|wav|m4a|wma|aiff|aif|mp4|mkv|mov)$/i.test(f.name));
     if (!valid.length) { toast('No audio files found', 'error'); return; }
-    files = [...files, ...valid.map(f => ({
+    s.files = [...s.files, ...valid.map(f => ({
       id: uid(), file: f, type: 'audio' as const,
       status: 'idle' as const, progress: 0, options: buildOptions(),
     }))];
@@ -55,7 +54,7 @@ export function mountAudio(root: HTMLElement) {
       toast(entry.error!, 'error');
     }
     patchFileCard(entry, cbs);
-    renderBatchBar(batchEl, files, compressAll, downloadAll, clearAll);
+    renderBatchBar(batchEl, s.files, compressAll, downloadAll, clearAll);
   }
 
   function downloadEntry(entry: FileEntry) {
@@ -63,15 +62,15 @@ export function mountAudio(root: HTMLElement) {
     const EXT_MAP: Record<AudioFormat, string> = { mp3:'mp3', aac:'m4a', ogg:'ogg', opus:'opus', flac:'flac', wav:'wav' };
     const a = Object.assign(document.createElement('a'), {
       href: URL.createObjectURL(entry.result.blob),
-      download: entry.file.name.replace(/\.[^.]+$/, '') + '_compressed.' + EXT_MAP[fmt],
+      download: entry.file.name.replace(/\.[^.]+$/, '') + '_compressed.' + EXT_MAP[s.fmt],
     });
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
   }
 
-  function compressAll() { files.forEach(f => { if (f.status === 'idle' || f.status === 'error') compressEntry(f); }); }
-  function downloadAll()  { files.filter(f => f.status === 'done').forEach(downloadEntry); }
-  function clearAll()     { files = []; render(); }
-  const cbs = { onCompress: compressEntry, onDownload: downloadEntry, onRemove: (id: string) => { files = files.filter(f => f.id !== id); render(); } };
+  function compressAll() { s.files.forEach(f => { if (f.status === 'idle' || f.status === 'error') compressEntry(f); }); }
+  function downloadAll()  { s.files.filter(f => f.status === 'done').forEach(downloadEntry); }
+  function clearAll()     { s.files = []; render(); }
+  const cbs = { onCompress: compressEntry, onDownload: downloadEntry, onRemove: (id: string) => { s.files = s.files.filter(f => f.id !== id); render(); } };
 
   let batchEl!: HTMLElement; let listEl!: HTMLElement; let dzWrap!: ReturnType<typeof createDropZone>;
 
@@ -100,57 +99,58 @@ export function mountAudio(root: HTMLElement) {
   function renderSettings() {
     const card = root.querySelector('#audio-settings')!;
     const formats: AudioFormat[] = ['mp3','aac','ogg','opus','flac','wav'];
-    const bOpts  = BITRATE_OPTS[fmt];
-    const ll     = isLossless(fmt);
+    const bOpts  = BITRATE_OPTS[s.fmt];
+    const ll     = isLossless(s.fmt);
 
     card.innerHTML = `
       <div class="s-row">
         <div class="s-field">
           <span class="s-label">Output format</span>
           <div class="fmt-pills" id="fmt-pills">
-            ${formats.map(f=>`<button class="pill${fmt===f?' on':''}" data-fmt="${f}">${f.toUpperCase()}</button>`).join('')}
+            ${formats.map(f=>`<button class="pill${s.fmt===f?' on':''}" data-fmt="${f}">${f.toUpperCase()}</button>`).join('')}
           </div>
         </div>
         ${!ll && bOpts.length ? `
           <div class="s-field">
             <span class="s-label">Bitrate</span>
             <select class="si" id="br-sel">
-              ${bOpts.map(b=>`<option value="${b}" ${bitrate===b?'selected':''}>${b} kbps</option>`).join('')}
+              ${bOpts.map(b=>`<option value="${b}" ${s.bitrate===b?'selected':''}>${b} kbps</option>`).join('')}
             </select>
           </div>` : ll ? `<div class="s-field"><span class="s-label" style="color:var(--green)">✓ Lossless — no bitrate setting</span></div>` : ''}
         <div class="s-field">
           <span class="s-label">Sample rate</span>
           <select class="si" id="sr-sel">
-            <option value="0" ${sampleRate===0?'selected':''}>Source rate</option>
-            ${[48000,44100,32000,22050].map(r=>`<option value="${r}" ${sampleRate===r?'selected':''}>${r/1000} kHz</option>`).join('')}
+            <option value="0" ${s.sampleRate===0?'selected':''}>Source rate</option>
+            ${[48000,44100,32000,22050].map(r=>`<option value="${r}" ${s.sampleRate===r?'selected':''}>${r/1000} kHz</option>`).join('')}
           </select>
         </div>
         <div class="s-field">
           <span class="s-label">Metadata</span>
-          <div class="seg">
-            <button class="${stripMeta?'on':''}" id="strip-on">Strip tags</button>
-            <button class="${!stripMeta?'on':''}" id="strip-off">Keep tags</button>
+          <div class="seg" role="group" aria-label="Metadata handling">
+            <button class="${s.stripMeta?'on':''}" aria-pressed="${s.stripMeta?'true':'false'}" id="strip-on">Strip tags</button>
+            <button class="${!s.stripMeta?'on':''}" aria-pressed="${!s.stripMeta?'true':'false'}" id="strip-off">Keep tags</button>
           </div>
         </div>
       </div>`;
 
     card.querySelectorAll('[data-fmt]').forEach(btn => btn.addEventListener('click', () => {
-      fmt = (btn as HTMLElement).dataset.fmt as AudioFormat;
-      bitrate = BITRATE_OPTS[fmt]?.[3] ?? 128;
+      s.fmt = (btn as HTMLElement).dataset.fmt as AudioFormat;
+      s.bitrate = BITRATE_OPTS[s.fmt]?.[3] ?? 128;
       renderSettings();
     }));
-    card.querySelector('#br-sel')?.addEventListener('change', e => { bitrate = +(e.target as HTMLSelectElement).value; });
-    card.querySelector('#sr-sel')?.addEventListener('change', e => { sampleRate = +(e.target as HTMLSelectElement).value; });
-    card.querySelector('#strip-on')?.addEventListener('click', ()  => { stripMeta = true; renderSettings(); });
-    card.querySelector('#strip-off')?.addEventListener('click', () => { stripMeta = false; renderSettings(); });
+    card.querySelector('#br-sel')?.addEventListener('change', e => { s.bitrate = +(e.target as HTMLSelectElement).value; });
+    card.querySelector('#sr-sel')?.addEventListener('change', e => { s.sampleRate = +(e.target as HTMLSelectElement).value; });
+    card.querySelector('#strip-on')?.addEventListener('click', ()  => { s.stripMeta = true; renderSettings(); });
+    card.querySelector('#strip-off')?.addEventListener('click', () => { s.stripMeta = false; renderSettings(); });
   }
 
   function render() {
+    registerBusyCheck(() => s.files.some(f => f.status === 'compressing'));
     renderSettings();
-    (dzWrap as any).setHasFiles(files.length > 0);
-    renderBatchBar(batchEl, files, compressAll, downloadAll, clearAll);
+    (dzWrap as any).setHasFiles(s.files.length > 0);
+    renderBatchBar(batchEl, s.files, compressAll, downloadAll, clearAll);
     listEl.innerHTML = '';
-    files.forEach(f => listEl.appendChild(renderFileCard(f, cbs)));
+    s.files.forEach(f => listEl.appendChild(renderFileCard(f, cbs)));
   }
 
   render();

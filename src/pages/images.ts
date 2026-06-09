@@ -1,25 +1,23 @@
+import { registerBusyCheck } from '../main';
 import { uid, getOutputExtension } from '../lib/types';
 import type { FileEntry, CompressOptions, ImageFormat } from '../lib/types';
 import { compressImage, getBestFormat } from '../lib/compressImage';
 import { createDropZone, renderFileCard, patchFileCard, renderBatchBar } from '../components';
 import { toast } from '../toast';
+import { imageStore } from '../store';
 
 export function mountImages(root: HTMLElement) {
-  let files: FileEntry[] = [];
-  let mode: 'quality' | 'targetSize' = 'quality';
-  let quality = 82;
-  let targetSizeKB = 200;
-  let format: ImageFormat = 'image/webp';
-  let maxDim = 0;
+  // ── State — lives in imageStore so it survives navigation ───
+  const s = imageStore; // shorthand alias
 
-  const effectiveFmt = () => getBestFormat(format);
-  const fmtMismatch  = () => effectiveFmt() !== format;
+  const effectiveFmt = () => getBestFormat(s.format);
+  const fmtMismatch  = () => effectiveFmt() !== s.format;
 
   function buildOptions(): CompressOptions {
     const o: CompressOptions = { format: effectiveFmt() };
-    if (maxDim > 0) { o.maxWidth = maxDim; o.maxHeight = maxDim; }
-    if (mode === 'quality') o.quality = quality / 100;
-    else                    o.targetSizeKB = targetSizeKB;
+    if (s.maxDim > 0) { o.maxWidth = s.maxDim; o.maxHeight = s.maxDim; }
+    if (s.mode === 'quality') o.quality = s.quality / 100;
+    else                      o.targetSizeKB = s.targetSizeKB;
     return o;
   }
 
@@ -27,7 +25,7 @@ export function mountImages(root: HTMLElement) {
     const valid = fs.filter(f =>
       f.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|avif|bmp|tiff|tif|heic|heif)$/i.test(f.name));
     if (!valid.length) { toast('No valid image files found', 'error'); return; }
-    files = [...files, ...valid.map(f => ({
+    s.files = [...s.files, ...valid.map(f => ({
       id: uid(), file: f, type: 'image' as const,
       status: 'idle' as const, progress: 0, options: buildOptions(),
     }))];
@@ -48,7 +46,7 @@ export function mountImages(root: HTMLElement) {
       toast(entry.error!, 'error');
     }
     patchFileCard(entry, cbs);
-    renderBatchBar(batchEl, files, compressAll, downloadAll, clearAll);
+    renderBatchBar(batchEl, s.files, compressAll, downloadAll, clearAll);
   }
 
   function downloadEntry(entry: FileEntry) {
@@ -61,11 +59,11 @@ export function mountImages(root: HTMLElement) {
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
   }
 
-  function compressAll() { files.forEach(f => { if (f.status === 'idle' || f.status === 'error') compressEntry(f); }); }
-  function downloadAll()  { files.filter(f => f.status === 'done').forEach(downloadEntry); }
-  function clearAll()     { files = []; render(); }
+  function compressAll() { s.files.forEach(f => { if (f.status === 'idle' || f.status === 'error') compressEntry(f); }); }
+  function downloadAll()  { s.files.filter(f => f.status === 'done').forEach(downloadEntry); }
+  function clearAll()     { s.files = []; render(); }
 
-  const cbs = { onCompress: compressEntry, onDownload: downloadEntry, onRemove: (id: string) => { files = files.filter(f => f.id !== id); render(); } };
+  const cbs = { onCompress: compressEntry, onDownload: downloadEntry, onRemove: (id: string) => { s.files = s.files.filter(f => f.id !== id); render(); } };
 
   // ── DOM ─────────────────────────────────────────────────────
   let batchEl!: HTMLElement;
@@ -111,30 +109,30 @@ export function mountImages(root: HTMLElement) {
     const modeHtml = `
       <div class="s-field">
         <span class="s-label">Mode</span>
-        <div class="seg">
-          <button class="${mode==='quality'?'on':''}" id="mode-q">Quality</button>
-          <button class="${mode==='targetSize'?'on':''}" id="mode-t">Target size</button>
+        <div class="seg" role="group" aria-label="Compression mode">
+          <button class="${s.mode==='quality'?'on':''}" aria-pressed="${s.mode==='quality'?'true':'false'}" id="mode-q">Quality</button>
+          <button class="${s.mode==='targetSize'?'on':''}" aria-pressed="${s.mode==='targetSize'?'true':'false'}" id="mode-t">Target size</button>
         </div>
       </div>`;
 
-    const qHtml = mode === 'quality' ? `
+    const qHtml = s.mode === 'quality' ? `
       <div class="s-field">
-        <span class="s-label">Quality <strong id="ql">${quality}%</strong></span>
-        <input type="range" class="slider" min="10" max="99" value="${quality}" id="q-range">
+        <span class="s-label">Quality <strong id="ql">${s.quality}%</strong></span>
+        <input type="range" class="slider" min="10" max="99" value="${s.quality}" id="q-range">
       </div>` : `
       <div class="s-field">
         <span class="s-label">Target (KB)</span>
-        <input class="ti" type="number" value="${targetSizeKB}" min="1" id="q-target">
+        <input class="ti" type="number" value="${s.targetSizeKB}" min="1" id="q-target">
       </div>`;
 
     const fmtHtml = `
       <div class="s-field">
         <span class="s-label">Output format</span>
         <select class="si" id="fmt-sel">
-          <option value="image/webp"  ${format==='image/webp'?'selected':''}>WebP</option>
-          <option value="image/jpeg"  ${format==='image/jpeg'?'selected':''}>JPEG</option>
-          <option value="image/png"   ${format==='image/png'?'selected':''}>PNG (lossless)</option>
-          <option value="image/avif"  ${format==='image/avif'?'selected':''}>AVIF</option>
+          <option value="image/webp"  ${s.format==='image/webp'?'selected':''}>WebP</option>
+          <option value="image/jpeg"  ${s.format==='image/jpeg'?'selected':''}>JPEG</option>
+          <option value="image/png"   ${s.format==='image/png'?'selected':''}>PNG (lossless)</option>
+          <option value="image/avif"  ${s.format==='image/avif'?'selected':''}>AVIF</option>
         </select>
       </div>`;
 
@@ -142,41 +140,42 @@ export function mountImages(root: HTMLElement) {
       <div class="s-field">
         <span class="s-label">Max size</span>
         <select class="si" id="dim-sel">
-          <option value="0"    ${maxDim===0?'selected':''}>Original</option>
-          <option value="4096" ${maxDim===4096?'selected':''}>4096 px</option>
-          <option value="2048" ${maxDim===2048?'selected':''}>2048 px</option>
-          <option value="1920" ${maxDim===1920?'selected':''}>1920 px</option>
-          <option value="1280" ${maxDim===1280?'selected':''}>1280 px</option>
-          <option value="800"  ${maxDim===800?'selected':''}>800 px</option>
+          <option value="0"    ${s.maxDim===0?'selected':''}>Original</option>
+          <option value="4096" ${s.maxDim===4096?'selected':''}>4096 px</option>
+          <option value="2048" ${s.maxDim===2048?'selected':''}>2048 px</option>
+          <option value="1920" ${s.maxDim===1920?'selected':''}>1920 px</option>
+          <option value="1280" ${s.maxDim===1280?'selected':''}>1280 px</option>
+          <option value="800"  ${s.maxDim===800?'selected':''}>800 px</option>
         </select>
       </div>`;
 
     card.innerHTML = `<div class="s-row">${modeHtml}${qHtml}${fmtHtml}${dimHtml}</div>`;
 
-    card.querySelector('#mode-q')!.addEventListener('click', () => { mode='quality'; renderSettings(); });
-    card.querySelector('#mode-t')!.addEventListener('click', () => { mode='targetSize'; renderSettings(); });
+    card.querySelector('#mode-q')!.addEventListener('click', () => { s.mode='quality'; renderSettings(); });
+    card.querySelector('#mode-t')!.addEventListener('click', () => { s.mode='targetSize'; renderSettings(); });
     card.querySelector('#q-range')?.addEventListener('input', e => {
-      quality = +(e.target as HTMLInputElement).value;
-      card.querySelector('#ql')!.textContent = quality + '%';
+      s.quality = +(e.target as HTMLInputElement).value;
+      card.querySelector('#ql')!.textContent = s.quality + '%';
     });
-    card.querySelector('#q-target')?.addEventListener('change', e => { targetSizeKB = +(e.target as HTMLInputElement).value || 200; });
-    card.querySelector('#fmt-sel')!.addEventListener('change', e => { format = (e.target as HTMLSelectElement).value as ImageFormat; renderSettings(); });
-    card.querySelector('#dim-sel')!.addEventListener('change', e => { maxDim = +(e.target as HTMLSelectElement).value; });
+    card.querySelector('#q-target')?.addEventListener('change', e => { s.targetSizeKB = +(e.target as HTMLInputElement).value || 200; });
+    card.querySelector('#fmt-sel')!.addEventListener('change', e => { s.format = (e.target as HTMLSelectElement).value as ImageFormat; renderSettings(); });
+    card.querySelector('#dim-sel')!.addEventListener('change', e => { s.maxDim = +(e.target as HTMLSelectElement).value; });
 
     // Compat warning
     if (fmtMismatch()) {
       const ef = effectiveFmt().split('/')[1].toUpperCase();
-      const rf = format.split('/')[1].toUpperCase();
+      const rf = s.format.split('/')[1].toUpperCase();
       warnEl.textContent = `⚠ Your browser doesn't support ${rf} encoding — using ${ef} instead.`;
       warnEl.style.display = 'block';
     } else { warnEl.style.display = 'none'; }
   }
 
   function render() {
-    (dzWrap as any).setHasFiles(files.length > 0);
-    renderBatchBar(batchEl, files, compressAll, downloadAll, clearAll);
+    registerBusyCheck(() => s.files.some(f => f.status === 'compressing'));
+    (dzWrap as any).setHasFiles(s.files.length > 0);
+    renderBatchBar(batchEl, s.files, compressAll, downloadAll, clearAll);
     listEl.innerHTML = '';
-    files.forEach(f => listEl.appendChild(renderFileCard(f, cbs)));
+    s.files.forEach(f => listEl.appendChild(renderFileCard(f, cbs)));
   }
 
   renderSettings();
